@@ -14,8 +14,8 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/dexlabsio/garlic/logging"
-	"github.com/dexlabsio/garlic/tracing"
+	"github.com/luanguimaraesla/garlic/logging"
+	"github.com/luanguimaraesla/garlic/tracing"
 	"github.com/go-chi/chi/v5"
 	"github.com/wI2L/jsondiff"
 	"go.uber.org/zap"

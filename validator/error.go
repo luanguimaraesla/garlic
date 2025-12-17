@@ -3,7 +3,7 @@ package validator
 import (
 	"fmt"
 
-	"github.com/dexlabsio/garlic/errors"
+	"github.com/luanguimaraesla/garlic/errors"
 	val "github.com/go-playground/validator/v10"
 )
 

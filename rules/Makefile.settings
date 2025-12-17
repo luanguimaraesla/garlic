@@ -1,7 +1,7 @@
 ifndef SETTINGS_DEF
 SETTINGS_DEF = 1
 
-SETTINGS_ORGANIZATION_NAME := "dexlabsio"
+SETTINGS_ORGANIZATION_NAME := "luanguimaraesla"
 SETTINGS_PROJECT_NAME := "garlic"
 
 endif

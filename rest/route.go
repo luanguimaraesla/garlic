@@ -5,8 +5,8 @@ import (
 
 	chi "github.com/go-chi/chi/v5"
 
-	"github.com/dexlabsio/garlic/errors"
-	"github.com/dexlabsio/garlic/logging"
+	"github.com/luanguimaraesla/garlic/errors"
+	"github.com/luanguimaraesla/garlic/logging"
 )
 
 type Routes []*Route

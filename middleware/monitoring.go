@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dexlabsio/garlic/monitoring"
+	"github.com/luanguimaraesla/garlic/monitoring"
 	"github.com/go-chi/chi/v5"
 )
 

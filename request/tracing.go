@@ -3,8 +3,8 @@ package request
 import (
 	"net/http"
 
-	"github.com/dexlabsio/garlic/errors"
-	"github.com/dexlabsio/garlic/tracing"
+	"github.com/luanguimaraesla/garlic/errors"
+	"github.com/luanguimaraesla/garlic/tracing"
 	"github.com/google/uuid"
 )
 

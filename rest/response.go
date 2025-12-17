@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/dexlabsio/garlic/errors"
+	"github.com/luanguimaraesla/garlic/errors"
 )
 
 type PayloadMessage struct {

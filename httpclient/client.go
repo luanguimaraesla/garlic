@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/dexlabsio/garlic/errors"
-	"github.com/dexlabsio/garlic/logging"
-	"github.com/dexlabsio/garlic/tracing"
+	"github.com/luanguimaraesla/garlic/errors"
+	"github.com/luanguimaraesla/garlic/logging"
+	"github.com/luanguimaraesla/garlic/tracing"
 )
 
 // Post sends a HTTP POST request to the given url

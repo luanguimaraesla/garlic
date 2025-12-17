@@ -1,6 +1,6 @@
 package database
 
-import "github.com/dexlabsio/garlic/errors"
+import "github.com/luanguimaraesla/garlic/errors"
 
 var (
 	KindDatabaseRecordNotFoundError = errors.Get("DatabaseRecordNotFoundError")

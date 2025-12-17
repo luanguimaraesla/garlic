@@ -1,7 +1,7 @@
 package request
 
 import (
-	"github.com/dexlabsio/garlic/errors"
+	"github.com/luanguimaraesla/garlic/errors"
 )
 
 var (

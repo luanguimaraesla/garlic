@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"reflect"
 
-	"github.com/dexlabsio/garlic/errors"
+	"github.com/luanguimaraesla/garlic/errors"
 )
 
 type Request struct {

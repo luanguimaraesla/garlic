@@ -1,6 +1,6 @@
 package tracing
 
-import "github.com/dexlabsio/garlic/errors"
+import "github.com/luanguimaraesla/garlic/errors"
 
 var (
 	KindContextError              = errors.Get("ContextError")

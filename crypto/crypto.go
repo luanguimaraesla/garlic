@@ -9,7 +9,7 @@ import (
 	"encoding/base64"
 	"io"
 
-	"github.com/dexlabsio/garlic/errors"
+	"github.com/luanguimaraesla/garlic/errors"
 )
 
 type Manager interface {

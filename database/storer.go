@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/dexlabsio/garlic/errors"
-	"github.com/dexlabsio/garlic/logging"
+	"github.com/luanguimaraesla/garlic/errors"
+	"github.com/luanguimaraesla/garlic/logging"
 )
 
 type Store interface {

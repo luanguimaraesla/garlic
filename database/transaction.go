@@ -3,7 +3,7 @@ package database
 import (
 	"context"
 
-	"github.com/dexlabsio/garlic/errors"
+	"github.com/luanguimaraesla/garlic/errors"
 	"github.com/jmoiron/sqlx"
 )
 

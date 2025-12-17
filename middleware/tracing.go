@@ -3,8 +3,8 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/dexlabsio/garlic/errors"
-	"github.com/dexlabsio/garlic/request"
+	"github.com/luanguimaraesla/garlic/errors"
+	"github.com/luanguimaraesla/garlic/request"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )

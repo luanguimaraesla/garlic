@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/dexlabsio/garlic/logging"
+	"github.com/luanguimaraesla/garlic/logging"
 	chi "github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )

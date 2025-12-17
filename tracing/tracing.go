@@ -3,8 +3,8 @@ package tracing
 import (
 	"context"
 
-	"github.com/dexlabsio/garlic/errors"
-	"github.com/dexlabsio/garlic/logging"
+	"github.com/luanguimaraesla/garlic/errors"
+	"github.com/luanguimaraesla/garlic/logging"
 
 	"github.com/google/uuid"
 )

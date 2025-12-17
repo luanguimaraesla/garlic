@@ -76,4 +76,4 @@ lint: go-lint
 .PHONY: image
 image:
 	@echo "> Building dev docker image"
-	docker build -t dexlabsio/garlic:dev .
+	docker build -t luanguimaraesla/garlic:dev .

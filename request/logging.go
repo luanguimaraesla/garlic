@@ -3,7 +3,7 @@ package request
 import (
 	"net/http"
 
-	"github.com/dexlabsio/garlic/logging"
+	"github.com/luanguimaraesla/garlic/logging"
 	"go.uber.org/zap"
 )
 

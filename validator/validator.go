@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/dexlabsio/garlic/errors"
-	"github.com/dexlabsio/garlic/logging"
+	"github.com/luanguimaraesla/garlic/errors"
+	"github.com/luanguimaraesla/garlic/logging"
 	val "github.com/go-playground/validator/v10"
 	"go.uber.org/zap"
 )
