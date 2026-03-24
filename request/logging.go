@@ -3,8 +3,9 @@ package request
 import (
 	"net/http"
 
-	"github.com/luanguimaraesla/garlic/logging"
 	"go.uber.org/zap"
+
+	"github.com/luanguimaraesla/garlic/logging"
 )
 
 // GetLogger returns the logger from the given request's context

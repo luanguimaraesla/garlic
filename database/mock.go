@@ -41,14 +41,14 @@ func NewSqlResult(lastInsertId int64, rowsAffected int64) SqlResult {
 // databases support this feature, and the syntax of such
 // statements varies.
 func (s *SqlResult) LastInsertId() (int64, error) {
-	return int64(s.lastInsertId), nil
+	return s.lastInsertId, nil
 }
 
 // RowsAffected returns the number of rows affected by an
 // update, insert, or delete. Not every database or database
 // driver may support this.
 func (s *SqlResult) RowsAffected() (int64, error) {
-	return int64(s.rowsAffected), nil
+	return s.rowsAffected, nil
 }
 
 type StoreMock struct {
@@ -199,7 +199,7 @@ func (t TxMock) getExecResults() (int, string) {
 	return t.executedCalls, t.executedQuery
 }
 
-func (t TxMock) ResetExecResults() {
+func (t *TxMock) ResetExecResults() {
 	t.executedCalls = 0
 	t.executedQuery = ""
 }
@@ -252,21 +252,21 @@ func NewAuthBackendMock() AuthBackendMock {
 	}
 }
 
-func (ab AuthBackendMock) NewJWT(userId string, orgId string, isSuperuser bool) (string, error) {
+func (ab *AuthBackendMock) NewJWT(userId string, orgId string, isSuperuser bool) (string, error) {
 	return ab.tokenStr, ab.err
 }
 
-func (ab AuthBackendMock) ParseJWT(r *http.Request) (*jwt.Token, error) {
+func (ab *AuthBackendMock) ParseJWT(r *http.Request) (*jwt.Token, error) {
 	return &ab.token, ab.err
 }
 
-func (ab AuthBackendMock) WithSuperUser() AuthBackendMock {
+func (ab *AuthBackendMock) WithSuperUser() *AuthBackendMock {
 	ab.isSuperUser = true
 	return ab
 }
 
-func (ab AuthBackendMock) WithToken(token jwt.Token) AuthBackendMock {
-	ab.token = token
+func (ab *AuthBackendMock) WithToken(token *jwt.Token) *AuthBackendMock {
+	ab.token = *token
 	return ab
 }
 

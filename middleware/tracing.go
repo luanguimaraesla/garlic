@@ -3,10 +3,11 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/luanguimaraesla/garlic/errors"
-	"github.com/luanguimaraesla/garlic/request"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+
+	"github.com/luanguimaraesla/garlic/errors"
+	"github.com/luanguimaraesla/garlic/request"
 )
 
 const (

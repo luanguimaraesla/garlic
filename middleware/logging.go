@@ -5,9 +5,10 @@ import (
 	"net/http"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/luanguimaraesla/garlic/logging"
 	"github.com/luanguimaraesla/garlic/request"
-	"go.uber.org/zap"
 )
 
 // Logging function generates a unique request ID for each

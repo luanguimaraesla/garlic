@@ -36,7 +36,7 @@ func (c *ContextT) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddString("function", c.caller)
 	for _, v := range c.entries.Values() {
 		if v.Value() != nil {
-			enc.AddReflected(v.Key(), v.Value())
+			_ = enc.AddReflected(v.Key(), v.Value())
 		}
 	}
 

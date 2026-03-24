@@ -4,10 +4,11 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/luanguimaraesla/garlic/errors"
-	"github.com/luanguimaraesla/garlic/logging"
 	val "github.com/go-playground/validator/v10"
 	"go.uber.org/zap"
+
+	"github.com/luanguimaraesla/garlic/errors"
+	"github.com/luanguimaraesla/garlic/logging"
 )
 
 var singleton *Validator
@@ -77,9 +78,7 @@ func ParseValidationErrors(err error) error {
 		return nil
 	}
 
-	valErrs, ok := err.(val.ValidationErrors)
-	if !ok {
-	}
+	valErrs, _ := err.(val.ValidationErrors)
 
 	return errors.PropagateAs(
 		KindValidationError,

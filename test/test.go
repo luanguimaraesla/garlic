@@ -14,11 +14,12 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/luanguimaraesla/garlic/logging"
-	"github.com/luanguimaraesla/garlic/tracing"
 	"github.com/go-chi/chi/v5"
 	"github.com/wI2L/jsondiff"
 	"go.uber.org/zap"
+
+	"github.com/luanguimaraesla/garlic/logging"
+	"github.com/luanguimaraesla/garlic/tracing"
 )
 
 type HttpStatus = int

@@ -4,9 +4,10 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/luanguimaraesla/garlic/logging"
 	chi "github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
+
+	"github.com/luanguimaraesla/garlic/logging"
 )
 
 var servers map[string]*Server

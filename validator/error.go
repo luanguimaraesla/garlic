@@ -3,8 +3,9 @@ package validator
 import (
 	"fmt"
 
-	"github.com/luanguimaraesla/garlic/errors"
 	val "github.com/go-playground/validator/v10"
+
+	"github.com/luanguimaraesla/garlic/errors"
 )
 
 type validationErrors struct {

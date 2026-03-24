@@ -5,10 +5,11 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/luanguimaraesla/garlic/errors"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+
+	"github.com/luanguimaraesla/garlic/errors"
 )
 
 // ParseResourceUUID reads the resource id from the request path and tries to parse it into a valid UUID.

@@ -3,9 +3,10 @@ package request
 import (
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"github.com/luanguimaraesla/garlic/errors"
 	"github.com/luanguimaraesla/garlic/tracing"
-	"github.com/google/uuid"
 )
 
 // GetRequestId is a helper function that retrieves the request ID from a request

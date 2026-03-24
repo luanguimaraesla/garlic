@@ -28,7 +28,7 @@ func PrettyPrintToFile(i interface{}, filepath string) {
 	if err != nil {
 		panic(err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// 3. Write the JSON bytes to the file.
 	_, err = file.Write(content)
@@ -48,7 +48,7 @@ func PrintToFile(i interface{}, filepath string) {
 	if err != nil {
 		panic(err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	_, err = file.Write(content)
 	if err != nil {
@@ -63,7 +63,7 @@ func WriteToFile(filename, content string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close() // Ensure the file is closed after writing
+	defer func() { _ = file.Close() }()
 
 	// Write the content to the file
 	_, err = file.WriteString(content)

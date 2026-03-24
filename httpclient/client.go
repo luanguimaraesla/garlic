@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+
 	"github.com/luanguimaraesla/garlic/errors"
 	"github.com/luanguimaraesla/garlic/logging"
 	"github.com/luanguimaraesla/garlic/tracing"

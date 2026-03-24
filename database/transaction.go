@@ -3,8 +3,9 @@ package database
 import (
 	"context"
 
-	"github.com/luanguimaraesla/garlic/errors"
 	"github.com/jmoiron/sqlx"
+
+	"github.com/luanguimaraesla/garlic/errors"
 )
 
 type key int

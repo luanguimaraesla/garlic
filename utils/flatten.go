@@ -43,7 +43,9 @@ func flattenStruct(i interface{}, parents []string) map[string]interface{} {
 				result[k] = v
 			}
 		} else {
-			keys := append(parents, tag)
+			keys := make([]string, len(parents)+1)
+			copy(keys, parents)
+			keys[len(parents)] = tag
 			flatKey := strings.Join(keys, FLATTENING_SEPARATOR)
 			result[flatKey] = fieldValue.Interface()
 		}

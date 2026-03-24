@@ -1,8 +1,9 @@
 package logging_test
 
 import (
-	"github.com/luanguimaraesla/garlic/logging"
 	"go.uber.org/zap"
+
+	"github.com/luanguimaraesla/garlic/logging"
 )
 
 func ExampleInit() {

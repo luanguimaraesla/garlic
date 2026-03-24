@@ -90,7 +90,7 @@ func From(kind *Kind, err error, message string, opts ...Opt) *ErrorT {
 		Details: map[string]any{},
 	}
 
-	e.wrap(err)
+	_ = e.wrap(err)
 
 	for _, opt := range opts {
 		opt.Opt(e)
@@ -174,8 +174,8 @@ func (e *ErrorT) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddString("code", e.kind.Code)
 	enc.AddString("kind", e.kind.FQN())
 	enc.AddInt("error_status_code", e.kind.StatusCode())
-	enc.AddReflected("details", e.Details)
-	enc.AddReflected("troubleshooting", e.Troubleshooting)
+	_ = enc.AddReflected("details", e.Details)
+	_ = enc.AddReflected("troubleshooting", e.Troubleshooting)
 
 	return nil
 }

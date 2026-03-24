@@ -36,7 +36,7 @@ func RedactedString(key, value string) Entry {
 		return Field(key, REDACTION_PLACEHOLDER)
 	}
 
-	// shows 1/3 of the content, half in the beggining, half in the end
+	// shows 1/3 of the content, half in the beginning, half in the end
 	visibleChars := length / (3 * 2)
 	if visibleChars < 1 {
 		visibleChars = 1

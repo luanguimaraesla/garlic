@@ -4,8 +4,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/luanguimaraesla/garlic/monitoring"
 	"github.com/go-chi/chi/v5"
+
+	"github.com/luanguimaraesla/garlic/monitoring"
 )
 
 // statusRecorder is a custom response writer that records the HTTP status code.

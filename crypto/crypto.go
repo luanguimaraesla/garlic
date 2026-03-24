@@ -40,7 +40,8 @@ func (c *Crypto) Encrypt(content []byte) (string, error) {
 
 	// Pad the content to a multiple of the block size
 	padding := aes.BlockSize - (len(content) % aes.BlockSize)
-	paddedContent := append(content, bytes.Repeat([]byte{byte(padding)}, padding)...)
+	paddedContent := append([]byte(nil), content...)
+	paddedContent = append(paddedContent, bytes.Repeat([]byte{byte(padding)}, padding)...)
 
 	// Create a new AES cipher block mode
 	ciphertext := make([]byte, aes.BlockSize+len(paddedContent))

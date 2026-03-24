@@ -5,11 +5,12 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/luanguimaraesla/garlic/errors"
 	pgx "github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
+
+	"github.com/luanguimaraesla/garlic/errors"
 )
 
 type Executor interface {
@@ -132,7 +133,7 @@ func (db *Database) Create(ctx context.Context, query string, resource any) erro
 
 		return errors.PropagateAs(errors.KindSystemError, err, "failed to insert resource", ectx)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	if rows.Next() {
 		if err := rows.StructScan(resource); err != nil {
