@@ -19,11 +19,12 @@ import (
     "context"
     "net/http"
 
+    chi "github.com/go-chi/chi/v5"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
+
     "github.com/luanguimaraesla/garlic/logging"
     "github.com/luanguimaraesla/garlic/middleware"
     "github.com/luanguimaraesla/garlic/rest"
-
-    _ "myapp/errors" // blank import to register custom error kinds
 )
 
 func main() {
@@ -35,8 +36,6 @@ func main() {
         },
     })
 
-    validator.Init(customValidations...)
-
     server := rest.GetServer("api")
     r := server.Router()
 
@@ -44,7 +43,6 @@ func main() {
     r.Group(func(r chi.Router) {
         r.Use(middleware.ContentTypeJson)
         r.Handle("/metrics", promhttp.Handler())
-        rest.RegisterApp(r, healthAPI)
     })
 
     // Protected routes (full middleware stack)
@@ -55,13 +53,23 @@ func main() {
             middleware.MetricsMonitor,
             middleware.ContentTypeJson,
         )
-        rest.RegisterApp(r, usersAPI)
-        rest.RegisterApp(r, ordersAPI)
+        rest.RegisterApp(r, &HealthApp{})
     })
 
     errc := server.Listen(context.Background(), ":8080")
     if err := <-errc; err != nil {
         logging.Global().Fatal(err.Error())
+    }
+}
+
+type HealthApp struct{}
+
+func (a *HealthApp) Routes() rest.Routes {
+    return rest.Routes{
+        rest.Get("/health", func(w http.ResponseWriter, r *http.Request) error {
+            rest.WriteMessage(http.StatusOK, "ok").Must(w)
+            return nil
+        }),
     }
 }
 ```
@@ -149,19 +157,21 @@ Define domain-specific kinds by setting a parent in the hierarchy. Register them
 
 ```go
 // myapp/errors/errors.go
-package errors
+package apperrors
 
-import "github.com/luanguimaraesla/garlic/errors"
+import (
+    "net/http"
 
-var (
-    KindPaymentDeclinedError = &errors.Kind{
-        Name:           "PaymentDeclinedError",
-        Code:           "PAY001",
-        Description:    "The payment provider declined the transaction",
-        HTTPStatusCode: http.StatusPaymentRequired,
-        Parent:         errors.KindUserError,
-    }
+    "github.com/luanguimaraesla/garlic/errors"
 )
+
+var KindPaymentDeclinedError = &errors.Kind{
+    Name:           "PaymentDeclinedError",
+    Code:           "PAY001",
+    Description:    "The payment provider declined the transaction",
+    HTTPStatusCode: http.StatusPaymentRequired,
+    Parent:         errors.KindUserError,
+}
 
 func init() {
     errors.Register(KindPaymentDeclinedError)
@@ -212,7 +222,7 @@ func (api *UserAPI) Read(w http.ResponseWriter, r *http.Request) error {
         // if original was KindSystemError -> 500 (sanitized)
     }
 
-    rest.WriteResponse(http.StatusOK, user.ToDTO()).Must(w)
+    rest.WriteResponse(http.StatusOK, user).Must(w)
     return nil
 }
 ```
@@ -244,7 +254,9 @@ func (s *OrderService) Create(ctx context.Context, form OrderForm) (*Order, erro
 Sensitive values can be partially redacted:
 
 ```go
-errors.Context(errors.RedactedString("api_key", "sk_live_abc123def456"))
+ectx := errors.Context(
+    errors.RedactedString("api_key", "sk_live_abc123def456"),
+)
 // logs as: "sk****f456"
 ```
 
@@ -259,11 +271,17 @@ var notFoundTemplate = errors.Template(
     errors.Hint("Check if this resource exists or the ID is correct."),
 )
 
-// Create a fresh error with additional context
-return notFoundTemplate.New(ectx)
+func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Resource, error) {
+    ectx := errors.Context(errors.Field("resource_id", id))
 
-// Wrap an existing error
-return notFoundTemplate.Propagate(cause, ectx)
+    resource, err := s.repo.FindByID(ctx, id)
+    if err != nil {
+        // Wrap an existing error with template kind and message
+        return nil, notFoundTemplate.Propagate(err, ectx)
+    }
+
+    return resource, nil
+}
 ```
 
 ### Inspecting Errors
@@ -273,10 +291,6 @@ return notFoundTemplate.Propagate(cause, ectx)
 ```go
 if errors.IsKind(err, errors.KindUserError) {
     // matches ValidationError, NotFoundError, AuthError, ForbiddenError, etc.
-}
-
-if errors.IsKind(err, KindPaymentDeclinedError) {
-    // retry with a different payment method
 }
 ```
 
@@ -362,7 +376,7 @@ Use `Tracing` for edge services that generate request IDs, and `PropagateTracing
 
 ```go
 cfg := &middleware.Config{
-    Cors: middleware.CorsConfig{
+    Cors: &middleware.CorsConfig{
         AllowedHosts:   []string{"https://app.example.com"},
         AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
         AllowedHeaders: []string{"Content-Type", "Authorization"},
@@ -392,7 +406,8 @@ func (api *OrderAPI) Routes() rest.Routes {
 }
 
 func (api *OrderAPI) Create(w http.ResponseWriter, r *http.Request) error {
-    model, err := request.ParseForm[Order](r, &CreateOrderForm{})
+    var form CreateOrderForm
+    model, err := request.ParseForm[Order](r, &form)
     if err != nil {
         return err
     }
@@ -402,7 +417,7 @@ func (api *OrderAPI) Create(w http.ResponseWriter, r *http.Request) error {
         return errors.Propagate(err, "failed to create order")
     }
 
-    rest.WriteResponse(http.StatusCreated, order.ToDTO()).Must(w)
+    rest.WriteResponse(http.StatusCreated, order).Must(w)
     return nil
 }
 ```
@@ -421,7 +436,8 @@ active, err := request.ParseOptionalParamBool(r, "active")
 name, err := request.ParseParamString(r, "name")
 
 // Body decoding + validation + model conversion
-model, err := request.ParseForm[Order](r, &CreateOrderForm{})
+var form CreateOrderForm
+model, err := request.ParseForm[Order](r, &form)
 ```
 
 ## Database Transactions
