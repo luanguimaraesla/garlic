@@ -169,7 +169,7 @@ var KindPaymentDeclinedError = &errors.Kind{
     Name:           "PaymentDeclinedError",
     Code:           "PAY001",
     Description:    "The payment provider declined the transaction",
-    HTTPStatusCode: http.StatusPaymentRequired,
+    HTTPStatusCode: http.StatusConflict,
     Parent:         errors.KindUserError,
 }
 
