@@ -14,8 +14,10 @@ import (
 
 // storeMockImpl is a minimal Store implementation for testing Storer
 type storeMockImpl struct {
-	beginErr  error
-	commitErr error
+	beginErr    error
+	commitErr   error
+	rolledBack  bool
+	rollbackErr error
 }
 
 func (s *storeMockImpl) BeginContext(ctx context.Context) (context.Context, func() error, func() error, error) {
@@ -24,7 +26,10 @@ func (s *storeMockImpl) BeginContext(ctx context.Context) (context.Context, func
 	}
 
 	commit := func() error { return s.commitErr }
-	rollback := func() error { return nil }
+	rollback := func() error {
+		s.rolledBack = true
+		return s.rollbackErr
+	}
 	return ctx, commit, rollback, nil
 }
 
@@ -120,6 +125,37 @@ func TestStorer_Transaction_panic_recovery(t *testing.T) {
 	_ = storer.Transaction(context.Background(), func(ctx context.Context) error {
 		panic("test panic")
 	})
+}
+
+func TestStorer_Transaction_commitError_triggersRollback(t *testing.T) {
+	store := &storeMockImpl{
+		commitErr: fmt.Errorf("commit failed"),
+	}
+	storer := NewStorer(store)
+
+	err := storer.Transaction(context.Background(), func(ctx context.Context) error {
+		return nil
+	})
+
+	if err == nil {
+		t.Fatal("expected error when commit fails, got nil")
+	}
+	if !store.rolledBack {
+		t.Error("rollback should be called when commit fails")
+	}
+}
+
+func TestStorer_Transaction_fnError_triggersRollback(t *testing.T) {
+	store := &storeMockImpl{}
+	storer := NewStorer(store)
+
+	_ = storer.Transaction(context.Background(), func(ctx context.Context) error {
+		return fmt.Errorf("fn failed")
+	})
+
+	if !store.rolledBack {
+		t.Error("rollback should be called when fn returns error")
+	}
 }
 
 func TestNewStorer(t *testing.T) {
