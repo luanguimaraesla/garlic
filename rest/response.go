@@ -41,7 +41,7 @@ var (
 )
 
 func (r *Response) Must(w http.ResponseWriter) {
-	w.Header().Set("Context-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(r.StatusCode)
 	if err := json.NewEncoder(w).Encode(r.Payload); err != nil {
 		panic(fmt.Sprintf("Failed to encode response %s", err))

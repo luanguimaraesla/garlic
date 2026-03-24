@@ -57,8 +57,8 @@ func (s *Storer) Transaction(ctx context.Context, fn func(context.Context) error
 		return errors.Propagate(err, "failed to execute transactional function")
 	}
 
-	err = commit()
-	if err != nil {
+	if cerr := commit(); cerr != nil {
+		err = cerr
 		return errors.Propagate(err, "storer failed to commit database transaction")
 	}
 

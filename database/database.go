@@ -127,7 +127,7 @@ func (db *Database) Create(ctx context.Context, query string, resource any) erro
 					ectx,
 				)
 			default:
-				return errors.PropagateAs(errors.KindSystemError, err, "missing required field", ectx)
+				return errors.PropagateAs(errors.KindSystemError, err, "unexpected database constraint error", ectx)
 			}
 		}
 

@@ -29,8 +29,10 @@ func Template(kind *Kind, message string, opts ...Opt) *TemplateT {
 // options provided, allowing for customization of the error. This method returns a pointer
 // to an ErrorT instance, representing the newly created error.
 func (t *TemplateT) New(opts ...Opt) *ErrorT {
-	opts = append(opts, t.opts...)
-	return New(t.kind, t.message, opts...)
+	combined := make([]Opt, 0, len(t.opts)+len(opts))
+	combined = append(combined, t.opts...)
+	combined = append(combined, opts...)
+	return New(t.kind, t.message, combined...)
 }
 
 // Propagate propagates an existing error with additional context provided by the template.
@@ -38,6 +40,8 @@ func (t *TemplateT) New(opts ...Opt) *ErrorT {
 // customization of the error propagation. This method returns a pointer to an ErrorT instance,
 // representing the propagated error with the specified kind, message, and options.
 func (t *TemplateT) Propagate(err error, opts ...Opt) *ErrorT {
-	opts = append(opts, t.opts...)
-	return PropagateAs(t.kind, err, t.message, opts...)
+	combined := make([]Opt, 0, len(t.opts)+len(opts))
+	combined = append(combined, t.opts...)
+	combined = append(combined, opts...)
+	return PropagateAs(t.kind, err, t.message, combined...)
 }
