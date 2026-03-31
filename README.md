@@ -1,5 +1,10 @@
 # Garlic
 
+[![CI](https://github.com/luanguimaraesla/garlic/actions/workflows/ci.yml/badge.svg)](https://github.com/luanguimaraesla/garlic/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/luanguimaraesla/garlic.svg)](https://pkg.go.dev/github.com/luanguimaraesla/garlic)
+[![Go Report Card](https://goreportcard.com/badge/github.com/luanguimaraesla/garlic)](https://goreportcard.com/report/github.com/luanguimaraesla/garlic)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+
 Garlic is a Go framework that provides the essential building blocks for developing microservices. It covers the most common concerns -- structured logging, HTTP routing, request parsing, error handling, database access, metrics, tracing, and background workers -- so that teams can focus on business logic instead of reinventing infrastructure plumbing for every new service.
 
 Garlic is consumed as a library (no main entry point). Import only the packages you need.
