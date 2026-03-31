@@ -12,8 +12,12 @@ type Filter struct {
 	value any
 }
 
-func (f *Filter) Statement() string {
-	return fmt.Sprintf("%s='%s'", f.key, f.value)
+func (f *Filter) Statement(paramIndex int) string {
+	return fmt.Sprintf("%s=$%d", f.key, paramIndex)
+}
+
+func (f *Filter) Value() any {
+	return f.value
 }
 
 // ExtractFilters inspects any struct (or pointer to a struct) and returns a map

@@ -86,10 +86,18 @@ func TestExtractFilters_byValue(t *testing.T) {
 
 func TestFilter_Statement(t *testing.T) {
 	f := &Filter{key: "name", value: "Alice"}
-	got := f.Statement()
-	want := "name='Alice'"
+	got := f.Statement(1)
+	want := "name=$1"
 	if got != want {
 		t.Errorf("want %q, got %q", want, got)
+	}
+}
+
+func TestFilter_Value(t *testing.T) {
+	f := &Filter{key: "name", value: "Alice"}
+	got := f.Value()
+	if got != "Alice" {
+		t.Errorf("want %q, got %q", "Alice", got)
 	}
 }
 
