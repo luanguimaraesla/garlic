@@ -26,18 +26,20 @@ func flattenStruct(i interface{}, parents []string) map[string]interface{} {
 			continue
 		}
 
+		squash := tag == ",squash" || strings.HasPrefix(tag, ",")
+
 		fieldValue := val.Field(i)
 		if fieldValue.Kind() == reflect.Ptr {
 			fieldValue = fieldValue.Elem()
 		}
 
 		if fieldValue.Kind() == reflect.Struct {
-			nextParents := make([]string, len(parents)+1)
-			var i int
-			for i = 0; i < len(parents); i++ {
-				nextParents[i] = parents[i]
+			nextParents := parents
+			if !squash {
+				nextParents = make([]string, len(parents)+1)
+				copy(nextParents, parents)
+				nextParents[len(parents)] = tag
 			}
-			nextParents[i] = tag
 
 			for k, v := range flattenStruct(fieldValue.Interface(), nextParents) {
 				result[k] = v
