@@ -3,12 +3,31 @@
 //
 // # Server
 //
-// [GetServer] implements a multiton pattern — each name maps to one [Server]:
+// [GetServer] implements a multiton pattern, each name maps to one [Server]:
 //
 //	srv := rest.GetServer("api")
 //	srv.Router().Use(middleware.Logging, middleware.Tracing)
 //	rest.RegisterApp(srv.Router(), myApp)
 //	errc := srv.Listen(ctx, ":8080")
+//
+// # Graceful Shutdown
+//
+// When the context passed to [Server.Listen] is cancelled, the server
+// drains in-flight requests before stopping. The shutdown timeout and
+// an optional hook can be configured via [ServerOption] functions:
+//
+//	srv := rest.NewServer("api",
+//	    rest.WithShutdownTimeout(10*time.Second),
+//	    rest.WithOnShutdown(func(ctx context.Context) {
+//	        db.Close()
+//	        cache.Flush(ctx)
+//	    }),
+//	)
+//
+// [WithShutdownTimeout] sets the maximum time to wait for active
+// connections to complete (default 30s). [WithOnShutdown] registers a
+// callback invoked when shutdown begins; the provided context carries
+// the shutdown deadline so cleanup work can respect the same timeout.
 //
 // # Routes
 //

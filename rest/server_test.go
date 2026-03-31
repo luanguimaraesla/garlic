@@ -20,7 +20,9 @@ func freePort(t *testing.T) string {
 		t.Fatalf("failed to get free port: %v", err)
 	}
 	addr := l.Addr().String()
-	l.Close()
+	if err := l.Close(); err != nil {
+		t.Fatalf("failed to close listener: %v", err)
+	}
 	return addr
 }
 
@@ -111,7 +113,7 @@ func TestListen_gracefulShutdown(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		resp, err := http.Get(fmt.Sprintf("http://%s/ping", bind))
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			ready = true
 			break
 		}
@@ -153,7 +155,7 @@ func TestListen_callsOnShutdownHook(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		resp, err := http.Get(fmt.Sprintf("http://%s/ping", bind))
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -195,7 +197,7 @@ func TestListen_onShutdownReceivesDeadlineContext(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		resp, err := http.Get(fmt.Sprintf("http://%s/ping", bind))
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -232,7 +234,7 @@ func TestListen_drainsInflightRequests(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		resp, err := http.Get(fmt.Sprintf("http://%s/slow", bind))
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -244,7 +246,7 @@ func TestListen_drainsInflightRequests(t *testing.T) {
 		defer close(doneCh)
 		resp, err := http.Get(fmt.Sprintf("http://%s/slow", bind))
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	}()
 
