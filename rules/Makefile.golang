@@ -95,7 +95,7 @@ go-install:
 go-clean:
 	@echo "Cleaning build cache"
 	@GOBINDIR=$(GOBINDIR) $(GOCLEAN)
-	sudo rm -rf $(GOBINDIR)
+	rm -rf $(GOBINDIR)
 
 .PHONY: go-build
 go-build:
