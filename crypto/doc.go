@@ -1,4 +1,4 @@
-// Package crypto provides AES-CBC encryption/decryption utilities and a SHA-256
+// Package crypto provides AES-GCM encryption/decryption utilities and a SHA-256
 // hashing function.
 //
 // # Manager Interface
@@ -8,14 +8,14 @@
 //
 // # Encryption
 //
-// [Crypto] implements [Manager] using AES-256-CBC with PKCS#7 padding. The
-// encryption key is derived from the configured master key via SHA-256:
+// [Crypto] implements [Manager] using AES-256-GCM with authenticated encryption.
+// The encryption key is derived from the configured master key via HKDF-SHA256:
 //
-//	c := crypto.New(&crypto.Config{MasterKey: "my-secret-key"})
+//	c, err := crypto.New(&crypto.Config{MasterKey: "my-secret-key"})
 //	ciphertext, err := c.Encrypt([]byte("plaintext"))
 //	plaintext, err := c.Decrypt(ciphertext)
 //
-// Encrypted output is base64-encoded with the IV prepended.
+// Encrypted output is base64-encoded with the nonce prepended.
 //
 // # Hashing
 //

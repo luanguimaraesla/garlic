@@ -5,7 +5,5 @@ type Config struct {
 }
 
 func Defaults() *Config {
-	return &Config{
-		MasterKey: "INSECURE_CHANGEME",
-	}
+	return &Config{}
 }

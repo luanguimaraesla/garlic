@@ -1,13 +1,13 @@
 package crypto
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"io"
+
+	"golang.org/x/crypto/hkdf"
 
 	"github.com/luanguimaraesla/garlic/errors"
 )
@@ -21,81 +21,89 @@ type Crypto struct {
 	config *Config
 }
 
-func New(cfg *Config) *Crypto {
-	return &Crypto{cfg}
+func New(cfg *Config) (*Crypto, error) {
+	if cfg.MasterKey == "" {
+		return nil, errors.New(errors.KindSystemError, "crypto master key must not be empty")
+	}
+
+	return &Crypto{cfg}, nil
 }
 
-// Encrypt takes a random text and uses AES to encrypt the text.
+// Encrypt uses AES-256-GCM to encrypt the content.
 func (c *Crypto) Encrypt(content []byte) (string, error) {
-	block, err := aes.NewCipher(c.generateAESKey())
+	key, err := c.deriveKey()
 	if err != nil {
-		return "", errors.Propagate(err, "failed to generate crypto cypher")
+		return "", errors.Propagate(err, "failed to derive encryption key")
 	}
 
-	// Generate a random initialization vector.
-	iv := make([]byte, aes.BlockSize)
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return "", errors.Propagate(err, "failed to generate random initialization vector")
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", errors.Propagate(err, "failed to create AES cipher")
 	}
 
-	// Pad the content to a multiple of the block size
-	padding := aes.BlockSize - (len(content) % aes.BlockSize)
-	paddedContent := append([]byte(nil), content...)
-	paddedContent = append(paddedContent, bytes.Repeat([]byte{byte(padding)}, padding)...)
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", errors.Propagate(err, "failed to create GCM")
+	}
 
-	// Create a new AES cipher block mode
-	ciphertext := make([]byte, aes.BlockSize+len(paddedContent))
-	ivStart := ciphertext[:aes.BlockSize]
-	copy(ivStart, iv)
-	cipher.NewCBCEncrypter(block, iv).CryptBlocks(ciphertext[aes.BlockSize:], paddedContent)
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", errors.Propagate(err, "failed to generate nonce")
+	}
 
-	// Encode the encrypted text as base64 for storage or transmission
-	encodedText := base64.StdEncoding.EncodeToString(ciphertext)
+	ciphertext := aead.Seal(nonce, nonce, content, nil)
 
-	return encodedText, nil
+	return base64Encode(ciphertext), nil
 }
 
+// Decrypt uses AES-256-GCM to decrypt the encoded ciphertext.
 func (c *Crypto) Decrypt(encodedText string) ([]byte, error) {
-	encrypted, err := base64.StdEncoding.DecodeString(encodedText)
+	data, err := base64Decode(encodedText)
 	if err != nil {
 		return nil, errors.Propagate(err, "failed to decode base64 string")
 	}
 
-	block, err := aes.NewCipher(c.generateAESKey())
+	key, err := c.deriveKey()
 	if err != nil {
-		return nil, errors.Propagate(err, "failed to create new cipher")
+		return nil, errors.Propagate(err, "failed to derive decryption key")
 	}
 
-	if len(encrypted) < aes.BlockSize {
-		return nil, errors.New(errors.KindSystemError, "invalid ciphertext length")
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, errors.Propagate(err, "failed to create AES cipher")
 	}
 
-	iv := encrypted[:aes.BlockSize]
-	ciphertext := encrypted[aes.BlockSize:]
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, errors.Propagate(err, "failed to create GCM")
+	}
 
-	// Create a new byte slice for decrypted data
-	decrypted := make([]byte, len(ciphertext))
+	nonceSize := aead.NonceSize()
+	if len(data) < nonceSize {
+		return nil, errors.New(errors.KindSystemError, "ciphertext too short")
+	}
 
-	// Perform the decryption
-	mode := cipher.NewCBCDecrypter(block, iv)
-	mode.CryptBlocks(decrypted, ciphertext)
+	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
 
-	// Unpad the decrypted password
-	padding := int(decrypted[len(decrypted)-1])
-	decrypted = decrypted[:len(decrypted)-padding]
+	plaintext, err := aead.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, errors.Propagate(err, "failed to decrypt ciphertext")
+	}
 
-	return decrypted, nil
+	return plaintext, nil
 }
 
-// generateAESKey creates a 32-byte compatible AES Key from a random
-// configured MasterKey string.
-func (c *Crypto) generateAESKey() []byte {
-	// Convert the random string to bytes
-	randomBytes := []byte(c.config.MasterKey)
+// deriveKey uses HKDF with SHA-256 to derive a 32-byte AES key from the master key.
+func (c *Crypto) deriveKey() ([]byte, error) {
+	masterKey := []byte(c.config.MasterKey)
+	info := []byte("garlic-aes-256-gcm")
 
-	// Generate a 32-byte AES key using SHA-256 hash function
-	hash := sha256.Sum256(randomBytes)
-	aesKey := hash[:]
+	hkdfReader := hkdf.New(sha256.New, masterKey, nil, info)
 
-	return aesKey
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(hkdfReader, key); err != nil {
+		return nil, errors.Propagate(err, "failed to derive key with HKDF")
+	}
+
+	return key, nil
 }

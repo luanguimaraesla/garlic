@@ -7,7 +7,10 @@ import (
 )
 
 func ExampleCrypto() {
-	c := crypto.New(&crypto.Config{MasterKey: "test-secret-key"})
+	c, err := crypto.New(&crypto.Config{MasterKey: "test-secret-key"})
+	if err != nil {
+		panic(err)
+	}
 
 	ciphertext, err := c.Encrypt([]byte("hello world"))
 	if err != nil {
