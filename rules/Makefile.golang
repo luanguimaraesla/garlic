@@ -79,7 +79,7 @@ endif
 endif
 
 GOIMPORTS := $(GORUN) golang.org/x/tools/cmd/goimports
-GOLANGCI_LINT := $(GORUN) github.com/golangci/golangci-lint/cmd/golangci-lint
+GOLANGCI_LINT := $(GORUN) github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 
 .PHONY: go-generate
 go-generate:
