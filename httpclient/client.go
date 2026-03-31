@@ -71,7 +71,7 @@ func request(ctx context.Context, method, url string, data any) (*http.Response,
 	}
 
 	// create net_http client and send request
-	client := &http.Client{}
+	client := &http.Client{Timeout: 30 * time.Second}
 	var res *http.Response
 
 	expBackoff := backoff.NewExponentialBackOff()

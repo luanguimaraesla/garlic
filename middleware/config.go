@@ -13,7 +13,7 @@ type CorsConfig struct {
 
 func CorsConfigDefaults() *CorsConfig {
 	return &CorsConfig{
-		AllowedHosts:   []string{"*"},
+		AllowedHosts:   []string{},
 		AllowedMethods: []string{"POST", "GET", "OPTIONS", "PUT", "PATCH", "DELETE"},
 		AllowedHeaders: []string{
 			"Accept", "Content-Type", "Content-Length", "Accept-Encoding",

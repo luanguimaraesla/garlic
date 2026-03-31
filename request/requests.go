@@ -85,15 +85,18 @@ func ParseParamPagination(r *http.Request) (limit, start int) {
 	rawPaginationStart := r.URL.Query().Get("start")
 
 	limit, err = strconv.Atoi(rawPaginationLimit)
-	if err != nil {
-		l.Debug("Pagination limit not set, defaults to 0")
-		limit = 0 // explicit zero value
+	if err != nil || limit < 0 {
+		l.Debug("Pagination limit not set or invalid, defaults to 0")
+		limit = 0
+	}
+	if limit > 1000 {
+		limit = 1000
 	}
 
 	start, err = strconv.Atoi(rawPaginationStart)
-	if err != nil {
-		l.Debug("Pagination start not set, defaults to 0")
-		start = 0 // explicit zero value
+	if err != nil || start < 0 {
+		l.Debug("Pagination start not set or invalid, defaults to 0")
+		start = 0
 	}
 
 	return
