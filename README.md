@@ -89,7 +89,7 @@ func (a *HealthApp) Routes() rest.Routes {
 | [`monitoring`](./monitoring) | Prometheus metrics for HTTP request tracking |
 | [`tracing`](./tracing) | Request and session ID context propagation |
 | [`httpclient`](./httpclient) | HTTP client with exponential backoff retry and distributed tracing |
-| [`crypto`](./crypto) | AES-CBC encryption/decryption and SHA-256 hashing |
+| [`crypto`](./crypto) | AES-256-GCM authenticated encryption and SHA-256 hashing |
 | [`worker`](./worker) | Goroutine pool for background task execution |
 | [`toolkit`](./toolkit) | Generic pointer and nil-checking utilities |
 | [`test`](./test) | Builder-pattern HTTP test case utilities |
