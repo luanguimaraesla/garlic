@@ -64,7 +64,16 @@ func (db *Database) BuildConnectionURL() string {
 func (db *Database) Connect() error {
 	cfg, err := pgx.ParseConfig(db.BuildConnectionString())
 	if err != nil {
-		return fmt.Errorf("invalid pg dsn: %w", err)
+		return errors.PropagateAs(
+			errors.KindSystemError,
+			err,
+			"invalid pg dsn",
+			errors.Context(
+				errors.Field("host", db.config.Host),
+				errors.Field("port", db.config.Port),
+				errors.Field("database", db.config.Database),
+			),
+		)
 	}
 
 	sqlDB := stdlib.OpenDB(*cfg)
