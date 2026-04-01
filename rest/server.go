@@ -6,8 +6,8 @@ import (
 	"time"
 
 	chi "github.com/go-chi/chi/v5"
-	"go.uber.org/zap"
 
+	"github.com/luanguimaraesla/garlic/errors"
 	"github.com/luanguimaraesla/garlic/logging"
 )
 
@@ -68,6 +68,11 @@ func (s *Server) Listen(ctx context.Context, bind string) <-chan error {
 	l := logging.Global()
 	errCh := make(chan error, 1)
 
+	ectx := errors.Context(
+		errors.Field("bind", bind),
+		errors.Field("server", s.Name),
+	)
+
 	srv := &http.Server{
 		Addr:    bind,
 		Handler: s.Router(),
@@ -77,9 +82,9 @@ func (s *Server) Listen(ctx context.Context, bind string) <-chan error {
 		defer close(errCh)
 
 		go func() {
-			l.Info("Listening.", zap.String("bind", bind), zap.String("server", s.Name))
+			l.Info("Listening.", ectx.Zap())
 			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				errCh <- err
+				errCh <- errors.PropagateAs(errors.KindSystemError, err, "failed to start HTTP server", ectx)
 			}
 		}()
 
@@ -93,7 +98,7 @@ func (s *Server) Listen(ctx context.Context, bind string) <-chan error {
 		}
 
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			errCh <- err
+			errCh <- errors.PropagateAs(errors.KindSystemError, err, "failed to gracefully shutdown HTTP server", ectx)
 		}
 	}()
 
