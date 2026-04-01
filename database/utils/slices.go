@@ -2,8 +2,9 @@ package utils
 
 import (
 	"database/sql/driver"
-	"fmt"
 	"strings"
+
+	"github.com/luanguimaraesla/garlic/errors"
 )
 
 type StringSlice []string
@@ -21,7 +22,13 @@ func (ss *StringSlice) Scan(src interface{}) error {
 	case []byte:
 		s = string(v)
 	default:
-		return fmt.Errorf("cannot scan %T into StringSlice", src)
+		return errors.New(
+			errors.KindSystemError,
+			"cannot scan into StringSlice",
+			errors.Context(
+				errors.Field("source_type", src),
+			),
+		)
 	}
 	s = strings.Trim(s, "{}")
 	if s == "" {
