@@ -44,3 +44,8 @@ The framework is organized as independent packages, each providing a specific co
 - **Error propagation:** Use `errors.Propagate(err)` or `errors.PropagateAs(err, kind)` rather than wrapping errors manually. Error kinds map to HTTP status codes automatically.
 - **Context injection:** Logger, tracing IDs, and other state flow through `context.Context` via middleware.
 - **Module mode:** Build uses `-mod=mod` (set in GOFLAGS). Dependencies are vendored (`vendor/` directory).
+
+## Agent Guidance
+
+For comprehensive usage rules and code examples when using garlic in downstream
+projects, see the skill at `.claude/skills/garlic-conventions/SKILL.md`.

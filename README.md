@@ -496,6 +496,21 @@ err := conn.Request(ctx, &httpclient.Request{
 }, &order)
 ```
 
+## AI Agent Guidance
+
+Garlic ships a [Claude Code](https://claude.ai/code) skill that teaches AI
+agents the framework's conventions (error propagation, context-based logging,
+middleware ordering, etc.). Projects that depend on garlic can install it with
+[skills](https://github.com/vercel-labs/skills):
+
+```bash
+npx skills add luanguimaraesla/garlic -s garlic-conventions
+```
+
+The skill activates automatically when Claude Code detects garlic imports in
+the project. Run `npx skills check` after updating the garlic dependency to
+pick up any changes.
+
 ## Development
 
 ```bash
