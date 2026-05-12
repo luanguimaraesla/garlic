@@ -10,6 +10,7 @@ import (
 // directly.
 type (
 	Logger          = zap.Logger
+	SugaredLogger   = zap.SugaredLogger
 	Field           = zap.Field
 	Level           = zap.AtomicLevel
 	ObjectEncoder   = zapcore.ObjectEncoder
