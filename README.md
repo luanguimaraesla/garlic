@@ -90,6 +90,7 @@ func (a *HealthApp) Routes() rest.Routes {
 | [`database`](./database) | PostgreSQL abstraction with CRUD, transactions, filtering, and mocking |
 | [`database/utils`](./database/utils) | Named query helpers, patch bindings, and PostgreSQL type converters |
 | [`logging`](./logging) | Singleton Zap-based structured logger with context integration |
+| [`logging/keyvals`](./logging/keyvals) | Adapter from garlic's logger to keyvals-style logger interfaces (Temporal SDK, go-kit log, log15) |
 | [`validator`](./validator) | Singleton go-playground/validator with custom field validators |
 | [`monitoring`](./monitoring) | Prometheus metrics for HTTP request tracking |
 | [`tracing`](./tracing) | Request and session ID context propagation |
@@ -495,6 +496,38 @@ err := conn.Request(ctx, &httpclient.Request{
     },
 }, &order)
 ```
+
+## Third-Party Logger Interfaces
+
+Several Go libraries (Temporal SDK, go-kit log, log15) expect a keyvals-style
+logger: `Debug/Info/Warn/Error(msg string, kv ...any)` plus `With(kv ...any)`.
+The `logging/keyvals` package adapts a garlic logger to that shape so consumers
+don't have to write the same shim in every project.
+
+```go
+import (
+    "go.temporal.io/sdk/client"
+
+    "github.com/luanguimaraesla/garlic/logging"
+    "github.com/luanguimaraesla/garlic/logging/keyvals"
+)
+
+c, err := client.Dial(client.Options{
+    HostPort: "temporal:7233",
+    Logger:   keyvals.NewLogger(logging.Global()),
+})
+```
+
+The package is named after the interface *shape*, not any single library,
+because the same shape shows up in multiple SDKs. The adapter is structurally
+compatible with all of them: garlic does not import the target SDKs, so adding
+`logging/keyvals` to your project does not pull Temporal (or any other library)
+into your dependency graph. The compile-time check that the adapter satisfies
+each interface happens at your call site, when you pass the logger to the
+target library.
+
+`NewLogger(nil)` falls back to `logging.Global()`. `With` returns a new
+adapter so chained calls keep satisfying the interface.
 
 ## AI Agent Guidance
 
