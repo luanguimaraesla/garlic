@@ -224,6 +224,35 @@ func (s *OrderService) Create(ctx context.Context, form OrderForm) (*Order, erro
 }
 ```
 
+### Bridging to third-party logger interfaces
+
+Several Go libraries (Temporal SDK, go-kit log, log15) expect a keyvals-style
+logger interface: `Debug/Info/Warn/Error(msg string, kv ...any)` plus
+`With(kv ...any)`. Use `logging/keyvals` to adapt the garlic logger instead of
+writing a per-project shim.
+
+- **ALWAYS** use `keyvals.NewLogger(logging.Global())` (or the context logger)
+  when configuring a third-party SDK that wants a keyvals-style logger.
+- **NEVER** import `go.uber.org/zap` directly just to name `*zap.SugaredLogger`;
+  use `logging.SugaredLogger` or let `keyvals` wrap it.
+- **NEVER** write a new shim in `internal/platform/<lib>/logger.go` that
+  duplicates the keyvals adapter. If the third-party interface has a
+  different shape (e.g., `logr.Logger`, `slog.Handler`, `grpclog.LoggerV2`),
+  open an issue upstream rather than reinventing the bridge per project.
+
+```go
+import (
+    "go.temporal.io/sdk/client"
+
+    "github.com/luanguimaraesla/garlic/logging"
+    "github.com/luanguimaraesla/garlic/logging/keyvals"
+)
+
+c, err := client.Dial(client.Options{
+    Logger: keyvals.NewLogger(logging.Global()),
+})
+```
+
 ### Pushing enriched logger back to context
 
 **Use with caution.** When a function enriches the logger and then calls
