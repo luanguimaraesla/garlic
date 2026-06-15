@@ -1,0 +1,72 @@
+name: Security · vulnerability scans
+
+# Two complementary scans:
+#   * govulncheck   - Go's official symbol-reachability scanner (low false-positive)
+#   * osv-scanner   - Google's OSV.dev-backed scanner (broader coverage, no reachability filter)
+#
+# Companion to the 7-day release-age cooldown enforced by
+# `hack/check-go-release-age` (Go CI). The cooldown blocks fresh malicious
+# packages from being installed; these scans catch already-published CVEs
+# in packages already pinned in go.sum.
+
+on:
+  pull_request:
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".supply-chain/**"
+      - ".github/workflows/security.yml"
+  schedule:
+    # Daily at 06:17 UTC. Surfaces newly-disclosed CVEs against already-pinned
+    # deps even when no PR touches them.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: govulncheck (Go)
+    runs-on: ubuntu-latest
+    # Bound the blast radius of a hung vuln-database fetch or scanner run.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+
+      # Pin to a specific govulncheck release (>=7d old) rather than @latest;
+      # the vuln database is fetched at scan time, so freshness comes from
+      # vuln.go.dev, not the binary version.
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+
+      - name: Scan
+        run: govulncheck ./...
+
+  osv-scanner:
+    name: OSV-Scanner (Go)
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    # SHA-pinned to v2.3.8. The reusable workflow scans `-r ./` by default,
+    # picks up go.mod and go.sum, and fails the job on any vulnerability.
+    # SARIF upload is off because GitHub Code Scanning is not configured
+    # on this repository.
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+    with:
+      upload-sarif: false
+      fail-on-vuln: true
