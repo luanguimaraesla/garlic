@@ -5,6 +5,9 @@ vendor/
 *.swp
 *.swo
 
+# local agent state
+.pi/
+
 # build folder
 build/
 
