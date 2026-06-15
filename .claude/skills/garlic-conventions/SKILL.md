@@ -361,7 +361,7 @@ router.Use(
     middleware.ContextCancel,    // 1. cancellable context
     middleware.Logging,          // 2. logger injected into context
     middleware.Tracing,          // 3. request/session IDs (needs logger)
-    middleware.MetricsMonitor,   // 4. Prometheus metrics
+    middleware.MetricsMonitor,   // 4. OpenTelemetry HTTP metrics
     middleware.ContentTypeJson,  // 5. JSON content type
     middleware.Cors(cfg),        // 6. CORS headers
 )
@@ -378,10 +378,13 @@ router.Use(
 Use Chi route groups to apply different middleware stacks:
 
 ```go
-// Public: no logging, no auth
+// Public: no logging, no auth.
+// Call observability.Init(&observability.Config{ServiceName: "..."}) once at
+// startup so MetricsMonitor's OTEL metrics are pushed to your OTLP collector
+// (configured via OTEL_EXPORTER_OTLP_ENDPOINT). There is no /metrics endpoint.
 r.Group(func(r chi.Router) {
     r.Use(middleware.ContentTypeJson)
-    r.Handle("/metrics", promhttp.Handler())
+    rest.RegisterApp(r, healthAPI)
 })
 
 // API: full observability

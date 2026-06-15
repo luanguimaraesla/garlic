@@ -25,11 +25,12 @@ The framework is organized as independent packages, each providing a specific co
 
 - **errors/** — Rich error type (`ErrorT`) with kinds (User, Validation, System), propagation chains, reverse traces, stack traces, and HTTP status code mapping. Central to the framework — used by most other packages.
 - **rest/** — Chi-based HTTP server with response helpers that integrate with the error system to produce appropriate HTTP responses.
-- **middleware/** — HTTP middleware stack: logging, tracing (request/session IDs), Prometheus monitoring, CORS, content-type enforcement, context cancellation.
+- **middleware/** — HTTP middleware stack: logging, tracing (request/session IDs), OpenTelemetry monitoring, CORS, content-type enforcement, context cancellation.
 - **request/** — Request parsing helpers (UUID/int from path, query params, JSON body) with error handling that produces user-friendly hints.
 - **database/** — PostgreSQL abstraction over sqlx/pgx with connection management, transactions (rollback/commit), query filtering, patching, and mock support.
 - **logging/** — Singleton Zap-based structured logger, initialized via config, injected into context by middleware.
-- **monitoring/** — Prometheus metrics: `http_request_total`, `http_active_requests`, `http_request_duration_seconds`.
+- **monitoring/** — OpenTelemetry HTTP metrics recorded via the global MeterProvider: `http.server.requests`, `http.server.active_requests`, `http.server.request.duration`.
+- **observability/** — Installs a MeterProvider that pushes metrics to an OTLP/gRPC collector (configured via OTEL env vars or `Config` overrides); `Shutdown()` flushes on exit.
 - **validator/** — Singleton go-playground/validator with custom field validators and JSON tag-based field naming.
 - **httpclient/** — HTTP client wrapper with backoff retry strategy for inter-service communication.
 - **crypto/** — Encryption/decryption utilities with mock support.

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -33,13 +34,17 @@ func MetricsMonitor(next http.Handler) http.Handler {
 			return
 		}
 
-		monitoring.IncrementActiveRequests(method, route)
+		ctx := r.Context()
+		monitoring.IncrementActiveRequests(ctx, method, route)
 
-		defer monitorLatency(method, route, time.Now())
+		start := time.Now()
+		defer func() {
+			monitorLatency(ctx, method, route, rec.status, start)
+		}()
 		next.ServeHTTP(&rec, r)
 
-		monitoring.DecrementActiveRequests(method, route)
-		monitoring.IncrementTraffic(method, route, rec.status)
+		monitoring.DecrementActiveRequests(ctx, method, route)
+		monitoring.IncrementTraffic(ctx, method, route, rec.status)
 	})
 }
 
@@ -79,7 +84,7 @@ func isIgnoredRoute(route string) bool {
 }
 
 // monitorLatency measures and records the request latency.
-func monitorLatency(method, route string, start time.Time) {
+func monitorLatency(ctx context.Context, method, route string, status int, start time.Time) {
 	elapsed := time.Since(start).Seconds()
-	monitoring.ObserveLatency(method, route, elapsed)
+	monitoring.ObserveLatency(ctx, method, route, status, elapsed)
 }

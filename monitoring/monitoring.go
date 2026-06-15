@@ -1,60 +1,145 @@
 package monitoring
 
 import (
-	"strconv"
+	"context"
+	"sync"
 
-	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
+
+	"github.com/luanguimaraesla/garlic/errors"
+	"github.com/luanguimaraesla/garlic/logging"
 )
 
-var (
-	TrafficMetric = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "http_request_total",
-			Help: "Total number of HTTP requests.",
-		},
-		[]string{"method", "route", "status_code"},
+// meterName is the instrumentation scope under which garlic's HTTP metrics are
+// recorded. It surfaces as the otel_scope_name label in Prometheus output.
+const meterName = "github.com/luanguimaraesla/garlic"
+
+// durationBuckets are the explicit histogram boundaries (in seconds) for
+// http.server.request.duration. They match the OpenTelemetry HTTP semantic
+// convention recommendation.
+var durationBuckets = []float64{
+	0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10,
+}
+
+// instruments holds the OpenTelemetry instruments mirroring the HTTP metrics
+// garlic records for every request.
+type instruments struct {
+	requests       metric.Int64Counter
+	activeRequests metric.Int64UpDownCounter
+	duration       metric.Float64Histogram
+}
+
+// getInstruments lazily builds the instruments from the global MeterProvider on
+// first use. Deferring creation until the first request ensures the instruments
+// bind to whatever MeterProvider the application installed at startup, rather
+// than the no-op provider present at package import time.
+var getInstruments = sync.OnceValues(func() (*instruments, error) {
+	meter := otel.Meter(meterName)
+
+	requests, err := meter.Int64Counter(
+		"http.server.requests",
+		metric.WithDescription("Total number of HTTP requests."),
+		metric.WithUnit("{request}"),
 	)
+	if err != nil {
+		return nil, errors.Propagate(err, "failed to create http.server.requests counter")
+	}
 
-	ActiveRequests = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "http_active_requests",
-			Help: "Number of active HTTP requests.",
-		},
-		[]string{"method", "route"},
+	activeRequests, err := meter.Int64UpDownCounter(
+		"http.server.active_requests",
+		metric.WithDescription("Number of in-flight HTTP requests."),
+		metric.WithUnit("{request}"),
 	)
+	if err != nil {
+		return nil, errors.Propagate(err, "failed to create http.server.active_requests counter")
+	}
 
-	LatencyMetric = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name: "http_request_duration_seconds",
-			Help: "Latency of HTTP requests.",
-		},
-		[]string{"method", "route"},
+	duration, err := meter.Float64Histogram(
+		"http.server.request.duration",
+		metric.WithDescription("Duration of HTTP requests."),
+		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(durationBuckets...),
 	)
-)
+	if err != nil {
+		return nil, errors.Propagate(err, "failed to create http.server.request.duration histogram")
+	}
 
-// IncrementTraffic increments the traffic metric
-func IncrementTraffic(method, route string, status int) {
-	TrafficMetric.WithLabelValues(method, route, strconv.Itoa(status)).Inc()
+	return &instruments{
+		requests:       requests,
+		activeRequests: activeRequests,
+		duration:       duration,
+	}, nil
+})
+
+// resolve returns the lazily built instruments, logging once and returning nil
+// if construction failed. Callers no-op when nil so a metrics failure never
+// breaks request handling.
+func resolve() *instruments {
+	inst, err := getInstruments()
+	if err != nil {
+		logging.Global().Error("Failed to initialize HTTP metrics", errors.Zap(err))
+		return nil
+	}
+
+	return inst
 }
 
-// IncrementActiveRequests increments the active requests metric
-func IncrementActiveRequests(method, route string) {
-	ActiveRequests.WithLabelValues(method, route).Inc()
+// IncrementTraffic records a completed HTTP request on the
+// http.server.requests counter.
+func IncrementTraffic(ctx context.Context, method, route string, status int) {
+	inst := resolve()
+	if inst == nil {
+		return
+	}
+
+	inst.requests.Add(ctx, 1, metric.WithAttributes(
+		semconv.HTTPRequestMethodKey.String(method),
+		semconv.HTTPRoute(route),
+		semconv.HTTPResponseStatusCode(status),
+	))
 }
 
-// DecrementActiveRequests decrements the active requests metric
-func DecrementActiveRequests(method, route string) {
-	ActiveRequests.WithLabelValues(method, route).Dec()
+// IncrementActiveRequests records the start of an HTTP request on the
+// http.server.active_requests up/down counter.
+func IncrementActiveRequests(ctx context.Context, method, route string) {
+	inst := resolve()
+	if inst == nil {
+		return
+	}
+
+	inst.activeRequests.Add(ctx, 1, metric.WithAttributes(
+		semconv.HTTPRequestMethodKey.String(method),
+		semconv.HTTPRoute(route),
+	))
 }
 
-// ObserveLatency observes the latency metric
-func ObserveLatency(method, route string, latency float64) {
-	LatencyMetric.WithLabelValues(method, route).Observe(latency)
+// DecrementActiveRequests records the end of an HTTP request on the
+// http.server.active_requests up/down counter.
+func DecrementActiveRequests(ctx context.Context, method, route string) {
+	inst := resolve()
+	if inst == nil {
+		return
+	}
+
+	inst.activeRequests.Add(ctx, -1, metric.WithAttributes(
+		semconv.HTTPRequestMethodKey.String(method),
+		semconv.HTTPRoute(route),
+	))
 }
 
-// init registers all metrics in the default registerer
-func init() {
-	prometheus.MustRegister(LatencyMetric)
-	prometheus.MustRegister(TrafficMetric)
-	prometheus.MustRegister(ActiveRequests)
+// ObserveLatency records the duration in seconds of a completed HTTP request on
+// the http.server.request.duration histogram.
+func ObserveLatency(ctx context.Context, method, route string, status int, seconds float64) {
+	inst := resolve()
+	if inst == nil {
+		return
+	}
+
+	inst.duration.Record(ctx, seconds, metric.WithAttributes(
+		semconv.HTTPRequestMethodKey.String(method),
+		semconv.HTTPRoute(route),
+		semconv.HTTPResponseStatusCode(status),
+	))
 }

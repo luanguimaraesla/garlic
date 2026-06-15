@@ -25,10 +25,10 @@ import (
     "net/http"
 
     chi "github.com/go-chi/chi/v5"
-    "github.com/prometheus/client_golang/prometheus/promhttp"
 
     "github.com/luanguimaraesla/garlic/logging"
     "github.com/luanguimaraesla/garlic/middleware"
+    "github.com/luanguimaraesla/garlic/observability"
     "github.com/luanguimaraesla/garlic/rest"
 )
 
@@ -41,14 +41,12 @@ func main() {
         },
     })
 
+    // Install an OpenTelemetry MeterProvider that pushes the metrics recorded
+    // by middleware.MetricsMonitor to an OTLP collector.
+    observability.Init(&observability.Config{ServiceName: "my-api"})
+
     server := rest.GetServer("api")
     r := server.Router()
-
-    // Public routes (no auth, no logging)
-    r.Group(func(r chi.Router) {
-        r.Use(middleware.ContentTypeJson)
-        r.Handle("/metrics", promhttp.Handler())
-    })
 
     // Protected routes (full middleware stack)
     r.Group(func(r chi.Router) {
@@ -85,14 +83,15 @@ func (a *HealthApp) Routes() rest.Routes {
 |---------|-------------|
 | [`errors`](./errors) | Rich error type with kind hierarchy, context propagation, and HTTP status mapping |
 | [`rest`](./rest) | Chi-based HTTP server with error-aware handlers and JSON response helpers |
-| [`middleware`](./middleware) | HTTP middleware: logging, tracing, Prometheus metrics, CORS, content-type |
+| [`middleware`](./middleware) | HTTP middleware: logging, tracing, OpenTelemetry metrics, CORS, content-type |
 | [`request`](./request) | Request parsing helpers for path params, query strings, and JSON bodies |
 | [`database`](./database) | PostgreSQL abstraction with CRUD, transactions, filtering, and mocking |
 | [`database/utils`](./database/utils) | Named query helpers, patch bindings, and PostgreSQL type converters |
 | [`logging`](./logging) | Singleton Zap-based structured logger with context integration |
 | [`logging/keyvals`](./logging/keyvals) | Adapter from garlic's logger to keyvals-style logger interfaces (Temporal SDK, go-kit log, log15) |
 | [`validator`](./validator) | Singleton go-playground/validator with custom field validators |
-| [`monitoring`](./monitoring) | Prometheus metrics for HTTP request tracking |
+| [`monitoring`](./monitoring) | OpenTelemetry metrics for HTTP request tracking |
+| [`observability`](./observability) | Installs a MeterProvider that pushes metrics to an OTLP collector |
 | [`tracing`](./tracing) | Request and session ID context propagation |
 | [`httpclient`](./httpclient) | HTTP client with exponential backoff retry and distributed tracing |
 | [`crypto`](./crypto) | AES-256-GCM authenticated encryption and SHA-256 hashing |
@@ -342,7 +341,7 @@ The `middleware` package provides HTTP middleware compatible with Chi's `Use` me
 | `Logging` | Injects a structured Zap logger into the request context and logs method, URL, status code, response size, and duration |
 | `Tracing` | Generates a UUID request ID, sets `X-Request-ID` in the response, and stores it in context |
 | `PropagateTracing` | Reads `X-Request-ID` and `X-Session-ID` from incoming headers for downstream services |
-| `MetricsMonitor` | Records Prometheus metrics: `http_request_total` (counter), `http_active_requests` (gauge), `http_request_duration_seconds` (histogram) |
+| `MetricsMonitor` | Records OpenTelemetry HTTP metrics: `http.server.requests` (counter), `http.server.active_requests` (up/down counter), `http.server.request.duration` (histogram) |
 | `ContentTypeJson` | Sets `Content-Type: application/json` on every response |
 | `Cors` | Sets CORS headers from a config struct and handles `OPTIONS` preflight requests |
 
@@ -356,10 +355,9 @@ Apply middleware per route group to control which routes get logging, auth, or m
 server := rest.GetServer("api")
 r := server.Router()
 
-// Public routes: health checks, metrics, docs
+// Public routes: health checks, docs
 r.Group(func(r chi.Router) {
     r.Use(middleware.ContentTypeJson)
-    r.Handle("/metrics", promhttp.Handler())
     rest.RegisterApp(r, healthAPI)
 })
 
@@ -392,6 +390,64 @@ cfg := &middleware.Config{
 
 r.Use(middleware.Cors(cfg))
 ```
+
+## Metrics and Observability
+
+`middleware.MetricsMonitor` records HTTP metrics through OpenTelemetry, using the
+global `MeterProvider`. By default that provider is a no-op, so nothing is
+exported until an application installs one. The `observability` package is the
+recommended setup: it pushes metrics to an OpenTelemetry collector over
+OTLP/gRPC.
+
+```go
+// Install once at startup, before serving traffic.
+observability.Init(&observability.Config{ServiceName: "my-api"})
+
+// Flush the last interval of metrics on shutdown.
+defer observability.Shutdown(context.Background())
+```
+
+The exporter reads the standard OpenTelemetry environment variables, so a
+collector-sidecar deployment needs no code configuration beyond the service
+name:
+
+```sh
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+```
+
+Non-zero `observability.Config` fields (`Endpoint`, `Insecure`, `Interval`)
+override the corresponding environment variable when you prefer explicit
+configuration. Applications that already run their own `MeterProvider` can skip
+`observability.Init` entirely and install it via `otel.SetMeterProvider`; the
+middleware records into whatever provider is installed.
+
+### Instruments
+
+The middleware records three instruments under the meter
+`github.com/luanguimaraesla/garlic`, named per the OpenTelemetry HTTP semantic
+conventions:
+
+| Instrument | Type | Attributes |
+|------------|------|------------|
+| `http.server.requests` | counter | `http.request.method`, `http.route`, `http.response.status_code` |
+| `http.server.active_requests` | up/down counter | `http.request.method`, `http.route` |
+| `http.server.request.duration` | histogram (seconds) | `http.request.method`, `http.route`, `http.response.status_code` |
+
+### Migrating from the Prometheus backend
+
+This replaces the previous `prometheus/client_golang` backend and is a breaking
+change:
+
+- The `monitoring.TrafficMetric`, `monitoring.ActiveRequests`, and
+  `monitoring.LatencyMetric` globals are removed, along with their automatic
+  registration in the default registry.
+- There is no `/metrics` endpoint. Metrics are pushed to an OTLP collector;
+  configure the destination with `OTEL_EXPORTER_OTLP_ENDPOINT` (or
+  `observability.Config`). Replace any `promhttp.Handler()` route with
+  `observability.Init(...)`.
+- If you still need a Prometheus scrape endpoint, point your collector's
+  Prometheus exporter at the data, or install a Prometheus-exporter
+  `MeterProvider` yourself instead of calling `observability.Init`.
 
 ## Routes and Handlers
 
