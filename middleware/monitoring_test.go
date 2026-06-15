@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	chi "github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -31,16 +32,16 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func okHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func okHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte("OK")); err != nil {
 			panic(err)
 		}
-	})
+	}
 }
 
-// collect gathers the current metrics from the manual reader.
+// collect gathers the current cumulative metrics from the manual reader.
 func collect(t *testing.T) metricdata.ResourceMetrics {
 	t.Helper()
 
@@ -48,22 +49,6 @@ func collect(t *testing.T) metricdata.ResourceMetrics {
 	require.NoError(t, reader.Collect(context.Background(), &rm))
 
 	return rm
-}
-
-// findMetric returns the aggregation recorded under the given instrument name.
-func findMetric(t *testing.T, rm metricdata.ResourceMetrics, name string) metricdata.Aggregation {
-	t.Helper()
-
-	for _, sm := range rm.ScopeMetrics {
-		for _, metric := range sm.Metrics {
-			if metric.Name == name {
-				return metric.Data
-			}
-		}
-	}
-
-	t.Fatalf("metric %q not found", name)
-	return nil
 }
 
 // attrsMatch reports whether the data point attribute set is exactly the given
@@ -83,28 +68,49 @@ func attrsMatch(set attribute.Set, kvs ...attribute.KeyValue) bool {
 	return true
 }
 
-// sumValue returns the int64 sum data point matching the attributes.
-func sumValue(t *testing.T, data metricdata.Aggregation, kvs ...attribute.KeyValue) (int64, bool) {
-	t.Helper()
-
-	sum, ok := data.(metricdata.Sum[int64])
-	require.True(t, ok, "expected Sum[int64], got %T", data)
-
-	for _, dp := range sum.DataPoints {
-		if attrsMatch(dp.Attributes, kvs...) {
-			return dp.Value, true
+// findAggregation returns the data recorded under the instrument name, or nil
+// if it has not been recorded yet.
+func findAggregation(rm metricdata.ResourceMetrics, name string) metricdata.Aggregation {
+	for _, sm := range rm.ScopeMetrics {
+		for _, metric := range sm.Metrics {
+			if metric.Name == name {
+				return metric.Data
+			}
 		}
 	}
 
-	return 0, false
+	return nil
 }
 
-// histogramPoint returns the float64 histogram data point matching the attributes.
-func histogramPoint(t *testing.T, data metricdata.Aggregation, kvs ...attribute.KeyValue) (metricdata.HistogramDataPoint[float64], bool) {
+// counterValue returns the current cumulative value of the int64 sum data point
+// matching the attributes, or 0 if absent. Reads against a baseline keep the
+// assertions independent of other tests and repeated runs.
+func counterValue(t *testing.T, name string, kvs ...attribute.KeyValue) int64 {
 	t.Helper()
 
-	hist, ok := data.(metricdata.Histogram[float64])
-	require.True(t, ok, "expected Histogram[float64], got %T", data)
+	sum, ok := findAggregation(collect(t), name).(metricdata.Sum[int64])
+	if !ok {
+		return 0
+	}
+
+	for _, dp := range sum.DataPoints {
+		if attrsMatch(dp.Attributes, kvs...) {
+			return dp.Value
+		}
+	}
+
+	return 0
+}
+
+// histogramPoint returns the float64 histogram data point matching the
+// attributes, or a zero point with found=false if absent.
+func histogramPoint(t *testing.T, name string, kvs ...attribute.KeyValue) (metricdata.HistogramDataPoint[float64], bool) {
+	t.Helper()
+
+	hist, ok := findAggregation(collect(t), name).(metricdata.Histogram[float64])
+	if !ok {
+		return metricdata.HistogramDataPoint[float64]{}, false
+	}
 
 	for _, dp := range hist.DataPoints {
 		if attrsMatch(dp.Attributes, kvs...) {
@@ -115,109 +121,139 @@ func histogramPoint(t *testing.T, data metricdata.Aggregation, kvs ...attribute.
 	return metricdata.HistogramDataPoint[float64]{}, false
 }
 
+// bucketCount returns the count in the bucket with the given upper bound.
+func bucketCount(point metricdata.HistogramDataPoint[float64], upper float64) uint64 {
+	for i, b := range point.Bounds {
+		if b == upper {
+			return point.BucketCounts[i]
+		}
+	}
+
+	return 0
+}
+
 func TestTrafficMonitoring(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	rec := httptest.NewRecorder()
-
-	MetricsMonitor(okHandler()).ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusOK, rec.Code)
-
-	data := findMetric(t, collect(t), "http.server.requests")
-	value, found := sumValue(t, data,
+	attrs := []attribute.KeyValue{
 		semconv.HTTPRequestMethodKey.String(http.MethodGet),
 		semconv.HTTPRoute("unknown"),
 		semconv.HTTPResponseStatusCode(http.StatusOK),
-	)
+	}
 
-	require.True(t, found, "no http.server.requests data point for GET/unknown/200")
-	assert.Equal(t, int64(1), value)
+	before := counterValue(t, "http.server.requests", attrs...)
+
+	rec := httptest.NewRecorder()
+	MetricsMonitor(okHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", nil))
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, int64(1), counterValue(t, "http.server.requests", attrs...)-before)
 }
 
 func TestActiveRequestsMonitoring(t *testing.T) {
 	// A distinct method keeps this test's data point disjoint from the others,
 	// since route ("unknown") and status (200) are shared.
 	method := http.MethodPost
-	req := httptest.NewRequest(method, "/test", nil)
-	rec := httptest.NewRecorder()
-
-	activeAttrs := []attribute.KeyValue{
+	attrs := []attribute.KeyValue{
 		semconv.HTTPRequestMethodKey.String(method),
 		semconv.HTTPRoute("unknown"),
 	}
 
+	before := counterValue(t, "http.server.active_requests", attrs...)
+
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Inside the handler the request is in flight: the up/down counter
-		// must read 1. ManualReader.Collect is synchronous.
-		data := findMetric(t, collect(t), "http.server.active_requests")
-		value, found := sumValue(t, data, activeAttrs...)
-
-		require.True(t, found, "no http.server.active_requests data point during request")
-		assert.Equal(t, int64(1), value)
+		// must read one above the baseline. ManualReader.Collect is synchronous.
+		during := counterValue(t, "http.server.active_requests", attrs...)
+		assert.Equal(t, before+1, during, "active requests should increase during the request")
 
 		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write([]byte("OK")); err != nil {
-			panic(err)
-		}
 	})
 
-	MetricsMonitor(handler).ServeHTTP(rec, req)
+	rec := httptest.NewRecorder()
+	MetricsMonitor(handler).ServeHTTP(rec, httptest.NewRequest(method, "/test", nil))
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-
-	// After the request completes the counter must return to 0.
-	data := findMetric(t, collect(t), "http.server.active_requests")
-	value, found := sumValue(t, data, activeAttrs...)
-
-	require.True(t, found, "no http.server.active_requests data point after request")
-	assert.Equal(t, int64(0), value)
+	assert.Equal(t, before, counterValue(t, "http.server.active_requests", attrs...),
+		"active requests should return to the baseline after the request")
 }
 
 func TestLatencyMonitoring(t *testing.T) {
 	method := http.MethodPut
 	requestRunTime := 1.1
+	attrs := []attribute.KeyValue{
+		semconv.HTTPRequestMethodKey.String(method),
+		semconv.HTTPRoute("unknown"),
+		semconv.HTTPResponseStatusCode(http.StatusOK),
+	}
 
-	req := httptest.NewRequest(method, "/test", nil)
-	rec := httptest.NewRecorder()
+	before, _ := histogramPoint(t, "http.server.request.duration", attrs...)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(time.Duration(requestRunTime * float64(time.Second)))
 		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write([]byte("OK")); err != nil {
-			panic(err)
-		}
 	})
 
-	MetricsMonitor(handler).ServeHTTP(rec, req)
+	rec := httptest.NewRecorder()
+	MetricsMonitor(handler).ServeHTTP(rec, httptest.NewRequest(method, "/test", nil))
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 
-	data := findMetric(t, collect(t), "http.server.request.duration")
-	point, found := histogramPoint(t, data,
+	after, found := histogramPoint(t, "http.server.request.duration", attrs...)
+	require.True(t, found, "no http.server.request.duration data point recorded")
+	assert.Equal(t, uint64(1), after.Count-before.Count)
+
+	// A 1.1s request falls in the (1, 2.5] bucket. OTEL bucket counts are
+	// non-cumulative, so exactly that bucket gains the single observation.
+	assert.Equal(t, uint64(1), bucketCount(after, 2.5)-bucketCount(before, 2.5))
+}
+
+func TestMetricsRecordedWhenHandlerPanics(t *testing.T) {
+	method := http.MethodDelete
+	activeAttrs := []attribute.KeyValue{
+		semconv.HTTPRequestMethodKey.String(method),
+		semconv.HTTPRoute("unknown"),
+	}
+	trafficAttrs := []attribute.KeyValue{
 		semconv.HTTPRequestMethodKey.String(method),
 		semconv.HTTPRoute("unknown"),
 		semconv.HTTPResponseStatusCode(http.StatusOK),
-	)
-
-	require.True(t, found, "no http.server.request.duration data point for PUT/unknown/200")
-	assert.Equal(t, uint64(1), point.Count)
-	assert.GreaterOrEqual(t, point.Sum, requestRunTime)
-
-	// A 1.1s request falls in the (1, 2.5] bucket. OTEL bucket counts are
-	// non-cumulative, so exactly that bucket holds the single observation.
-	idx := bucketIndex(point.Bounds, 2.5)
-	require.GreaterOrEqual(t, idx, 0, "2.5s boundary missing from histogram bounds")
-	assert.Equal(t, uint64(1), point.BucketCounts[idx])
-}
-
-// bucketIndex returns the index of the given upper bound in the bounds slice,
-// or -1 if absent.
-func bucketIndex(bounds []float64, upper float64) int {
-	for i, b := range bounds {
-		if b == upper {
-			return i
-		}
 	}
 
-	return -1
+	activeBefore := counterValue(t, "http.server.active_requests", activeAttrs...)
+	trafficBefore := counterValue(t, "http.server.requests", trafficAttrs...)
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("boom")
+	})
+
+	require.Panics(t, func() {
+		MetricsMonitor(handler).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(method, "/test", nil))
+	})
+
+	assert.Equal(t, activeBefore, counterValue(t, "http.server.active_requests", activeAttrs...),
+		"active requests must return to the baseline even when the handler panics")
+	assert.Equal(t, int64(1), counterValue(t, "http.server.requests", trafficAttrs...)-trafficBefore,
+		"a panicking request must still be counted")
+}
+
+func TestHealthRouteSkipped(t *testing.T) {
+	attrs := []attribute.KeyValue{
+		semconv.HTTPRequestMethodKey.String(http.MethodGet),
+		semconv.HTTPRoute("/health"),
+		semconv.HTTPResponseStatusCode(http.StatusOK),
+	}
+
+	before := counterValue(t, "http.server.requests", attrs...)
+
+	// A chi router resolves the route pattern to "/health", which the
+	// middleware excludes from metrics.
+	router := chi.NewRouter()
+	router.Use(MetricsMonitor)
+	router.Get("/health", okHandler())
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, int64(0), counterValue(t, "http.server.requests", attrs...)-before,
+		"/health must be excluded from metrics")
 }

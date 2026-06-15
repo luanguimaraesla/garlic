@@ -14,7 +14,8 @@
 //
 // [Init] builds a MeterProvider with an OTLP/gRPC exporter behind a periodic
 // reader and installs it via otel.SetMeterProvider. Calling [Init] more than
-// once panics. The service version is taken from
+// once is fatal (it logs at Fatal level and exits the process), unless
+// [Shutdown] ran in between. The service version is taken from
 // [github.com/luanguimaraesla/garlic/global.Version].
 //
 // # Configuration

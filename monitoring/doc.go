@@ -18,6 +18,6 @@
 // The instruments are created lazily on first use from the global
 // MeterProvider, so they bind to whichever provider the application installs at
 // startup. Until a provider is installed the default is a no-op and nothing is
-// collected. The observability package provides a one-line setup that installs
+// exported. The observability package provides a one-line setup that installs
 // a MeterProvider which pushes the metrics to an OTLP collector.
 package monitoring

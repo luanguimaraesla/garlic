@@ -37,14 +37,16 @@ func MetricsMonitor(next http.Handler) http.Handler {
 		ctx := r.Context()
 		monitoring.IncrementActiveRequests(ctx, method, route)
 
+		// Record on a deferred path so the active-requests gauge stays
+		// balanced and the request is still counted even if the handler panics.
 		start := time.Now()
 		defer func() {
+			monitoring.DecrementActiveRequests(ctx, method, route)
+			monitoring.IncrementTraffic(ctx, method, route, rec.status)
 			monitorLatency(ctx, method, route, rec.status, start)
 		}()
-		next.ServeHTTP(&rec, r)
 
-		monitoring.DecrementActiveRequests(ctx, method, route)
-		monitoring.IncrementTraffic(ctx, method, route, rec.status)
+		next.ServeHTTP(&rec, r)
 	})
 }
 

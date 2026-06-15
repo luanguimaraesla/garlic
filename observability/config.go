@@ -10,7 +10,8 @@ import "time"
 // field overrides the corresponding environment variable.
 type Config struct {
 	// ServiceName is reported as the service.name resource attribute. Defaults
-	// to "garlic".
+	// to "garlic". When empty, OTEL_SERVICE_NAME / OTEL_RESOURCE_ATTRIBUTES
+	// apply instead.
 	ServiceName string `json:"service_name" mapstructure:"service_name" yaml:"service_name"`
 
 	// Endpoint is the OTLP/gRPC collector address ("host:port"). Overrides

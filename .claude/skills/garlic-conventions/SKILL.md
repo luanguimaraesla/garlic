@@ -34,10 +34,39 @@ loses this data silently.
   help users understand what they did wrong and how to fix it. Hints support
   format strings: `errors.Hint("Check resource %q in namespace %q", name, ns)`.
 - **NEVER** use bare `return err` -- it creates a gap in the reverse trace.
+  This includes errors that are already garlic errors (e.g. from
+  `request.ParseResourceUUID`, `request.Decode*`, or another garlic-aware
+  function): propagation appends the current caller to the reverse trace, so
+  "it is already a garlic error" is never a reason to return bare.
+- **NEVER** return a helper's error result bare, even when the helper
+  propagates internally. `return foo{}, classifyX(err)` is wrong; the caller
+  wraps it: `return foo{}, errors.Propagate(classifyX(err), "msg", ectx)`.
+  The helper's internal propagation covers the helper; the call-site
+  `Propagate` is what stitches the calling function into the reverse trace.
+  Corollary: classification helpers classify only, they do not take an
+  `ectx` parameter (ectx is function-scoped); the caller owns the context.
 - **NEVER** wrap errors with `fmt.Errorf("...: %w", err)` -- it bypasses the
   reverse trace and scoped context entirely.
 - **NEVER** use `errors.New()` to wrap an existing error -- use `Propagate`.
   `New` is only for creating fresh errors with no cause.
+- **NEVER** import the stdlib `errors` package in garlic code. No stdlib
+  sentinels: internal discriminator errors are garlic templates/errors
+  recognized by kind. All comparisons go through garlic: `errors.Is`,
+  `errors.As`, `errors.IsKind`, `errors.AsKind` (garlic's `Is`/`As` delegate
+  to the stdlib, so they also match foreign errors like `io.EOF` and
+  `*http.MaxBytesError`).
+
+### The only exception: foreign interface contracts
+
+When a type implements an interface owned by the stdlib or a third party
+(`io.Reader`, `http.RoundTripper`, `sql.Scanner`, ...), the methods must
+honor that contract's error semantics and return errors raw: consumers match
+on concrete identity (`io.ReadAll` compares `err == io.EOF` by pointer;
+`errors.As` targets like `*http.MaxBytesError` must stay recognizable).
+Wrapping inside the implementation breaks the foreign protocol. The garlic
+boundary is the first garlic-aware caller of that implementation, and THAT
+function must propagate. Record the recorded/terminal error on the type if
+the caller needs it for classification.
 
 ### Example: 3-layer propagation chain
 
@@ -65,13 +94,18 @@ func (s *UserService) Get(ctx context.Context, id uuid.UUID) (*User, error) {
 
 // Handler layer
 func (a *UserAPI) Read(w http.ResponseWriter, r *http.Request) error {
+    ectx := errors.Context(errors.Field("route", "users.read"))
     id, err := request.ParseResourceUUID(r, "user_id")
     if err != nil {
-        return err // already a garlic error with hint
+        // Even though request helpers return garlic errors, the
+        // handler still propagates: propagation appends THIS caller
+        // to the reverse trace. "Already a garlic error" is never a
+        // reason to return bare.
+        return errMissingUserID.Propagate(err, ectx)
     }
     user, err := a.service.Get(r.Context(), id)
     if err != nil {
-        return errors.Propagate(err, "failed to read user")
+        return errors.Propagate(err, "failed to read user", ectx)
     }
     rest.WriteResponse(http.StatusOK, user).Must(w)
     return nil
@@ -167,6 +201,52 @@ return errors.Propagate(err, "failed to process order", ectx)
 For sensitive values, use `errors.RedactedString` which shows only a portion of
 the value in logs.
 
+#### Error contexts are function-scoped
+
+- **NEVER** pass `*errors.ContextT` as a function parameter. Garlic keys each
+  context scope by the function that attached it, so a helper stamping the
+  caller's ectx misattributes where the data came from and couples the helper's
+  signature to whatever the caller happened to collect.
+- **ALWAYS** build `errors.Context(...)` inline, in the function that creates
+  or propagates the error, from values in its own scope. Reusing one ectx at
+  several error sites within the same function is fine.
+- Helpers that need identifying fields take plain data parameters (an ID, a
+  name) and build their own context from them. Callers attach their own scope
+  when they propagate; duplicate fields across scopes are normal and by design.
+- Keep identity fields (e.g. a tenant or resource ID) in the error context even
+  when middleware already enriched the request logger with them. Error contexts
+  must be self-contained; a duplicated field on log lines is accepted noise.
+- Do not echo caller-controlled input (malformed digests, raw headers) into
+  context fields; create those errors with `.New()` and no fields.
+
+```go
+// WRONG: ectx travels across the function boundary
+func validateOrder(form OrderForm, ectx *errors.ContextT) error {
+    if form.Quantity <= 0 {
+        return errInvalidQuantity.New(ectx) // caller's scope, misattributed
+    }
+    return nil
+}
+
+// CORRECT: each function owns its scope
+func validateOrder(form OrderForm) error {
+    if form.Quantity <= 0 {
+        return errInvalidQuantity.New(errors.Context(
+            errors.Field("quantity", form.Quantity),
+        ))
+    }
+    return nil
+}
+
+func (s *OrderService) Create(ctx context.Context, form OrderForm) error {
+    ectx := errors.Context(errors.Field("order_id", form.OrderID))
+    if err := validateOrder(form); err != nil {
+        return errors.Propagate(err, "invalid order", ectx) // caller adds its scope here
+    }
+    // ...
+}
+```
+
 ## 2. Context-Based Logging
 
 ### Rules
@@ -222,35 +302,6 @@ func (s *OrderService) Create(ctx context.Context, form OrderForm) (*Order, erro
     l.Info("creating order")
     // ...
 }
-```
-
-### Bridging to third-party logger interfaces
-
-Several Go libraries (Temporal SDK, go-kit log, log15) expect a keyvals-style
-logger interface: `Debug/Info/Warn/Error(msg string, kv ...any)` plus
-`With(kv ...any)`. Use `logging/keyvals` to adapt the garlic logger instead of
-writing a per-project shim.
-
-- **ALWAYS** use `keyvals.NewLogger(logging.Global())` (or the context logger)
-  when configuring a third-party SDK that wants a keyvals-style logger.
-- **NEVER** import `go.uber.org/zap` directly just to name `*zap.SugaredLogger`;
-  use `logging.SugaredLogger` or let `keyvals` wrap it.
-- **NEVER** write a new shim in `internal/platform/<lib>/logger.go` that
-  duplicates the keyvals adapter. If the third-party interface has a
-  different shape (e.g., `logr.Logger`, `slog.Handler`, `grpclog.LoggerV2`),
-  open an issue upstream rather than reinventing the bridge per project.
-
-```go
-import (
-    "go.temporal.io/sdk/client"
-
-    "github.com/luanguimaraesla/garlic/logging"
-    "github.com/luanguimaraesla/garlic/logging/keyvals"
-)
-
-c, err := client.Dial(client.Options{
-    Logger: keyvals.NewLogger(logging.Global()),
-})
 ```
 
 ### Pushing enriched logger back to context
@@ -378,10 +429,7 @@ router.Use(
 Use Chi route groups to apply different middleware stacks:
 
 ```go
-// Public: no logging, no auth.
-// Call observability.Init(&observability.Config{ServiceName: "..."}) once at
-// startup so MetricsMonitor's OTEL metrics are pushed to your OTLP collector
-// (configured via OTEL_EXPORTER_OTLP_ENDPOINT). There is no /metrics endpoint.
+// Public: no logging, no auth
 r.Group(func(r chi.Router) {
     r.Use(middleware.ContentTypeJson)
     rest.RegisterApp(r, healthAPI)
@@ -398,6 +446,56 @@ r.Group(func(r chi.Router) {
     rest.RegisterApp(r, usersAPI)
 })
 ```
+
+### Metrics and observability
+
+`middleware.MetricsMonitor` records HTTP metrics through OpenTelemetry, against
+the global `MeterProvider`. It records three instruments under the meter
+`github.com/luanguimaraesla/garlic`, using the OTEL HTTP semantic-convention
+attribute keys:
+
+| Instrument | Type | Attributes |
+|------------|------|------------|
+| `http.server.requests` | counter | `http.request.method`, `http.route`, `http.response.status_code` |
+| `http.server.active_requests` | up/down counter | `http.request.method`, `http.route` |
+| `http.server.request.duration` | histogram (seconds) | `http.request.method`, `http.route`, `http.response.status_code` |
+
+`http.server.active_requests` and `http.server.request.duration` are HTTP
+semantic-convention metrics; `http.server.requests` is a garlic-specific request
+counter.
+
+### Rules
+
+- **ALWAYS** install a `MeterProvider` at startup, otherwise the global provider
+  is a no-op and nothing is exported. The `observability` package is the
+  recommended one-liner: it pushes metrics to an OTLP/gRPC collector.
+- **ALWAYS** call `observability.Init` once, early, before serving traffic
+  (it is fatal if called twice), and `observability.Shutdown(ctx)` on graceful
+  shutdown so the final interval of metrics is flushed.
+- **NEVER** expose a `/metrics` endpoint or wire `promhttp` / a Prometheus
+  registry directly. Metrics are pushed to a collector, not scraped. There is
+  no `observability.Handler`.
+- **PREFER** configuring the exporter with the standard OTEL environment
+  variables (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_INSECURE`,
+  `OTEL_METRIC_EXPORT_INTERVAL`). Non-zero `observability.Config` fields
+  (`Endpoint`, `Insecure`, `Interval`) override the matching variable.
+- An application that already runs its own `MeterProvider` can skip
+  `observability.Init` and install it via `otel.SetMeterProvider`; the
+  middleware records into whatever provider is installed.
+
+```go
+// Startup: push garlic's HTTP metrics to the collector. With
+// OTEL_EXPORTER_OTLP_ENDPOINT set in the environment, ServiceName is the only
+// code-level configuration most deployments need.
+observability.Init(&observability.Config{ServiceName: "my-api"})
+
+// Graceful shutdown: flush the last export interval.
+rest.GetServer("api", rest.WithOnShutdown(func(ctx context.Context) {
+    _ = observability.Shutdown(ctx)
+}))
+```
+
+The `/health` route is automatically excluded from both logging and metrics.
 
 ## 5. Database Transactions
 
@@ -530,6 +628,7 @@ func TestCreateOrder(t *testing.T) {
 | Errors | `errors.Hint(msg)` on user-level errors | Omit hints on `KindUserError` and subkinds |
 | Errors | `errors.Zap(err)` for logging | `zap.Error(err)` |
 | Errors | `errors.IsKind(err, kind)` for checks | Type assertions on `*ErrorT` |
+| Errors | Build `errors.Context(...)` at function scope | Pass `*errors.ContextT` as a parameter |
 | Logging | `logging.GetLoggerFromContext(ctx)` in requests | `logging.Global()` in request-scoped code |
 | Logging | `logging.Init()` once at startup | Calling `Init()` twice (panics) |
 | Logging | Logger enrichment only for top-level identifiers | Enriching logger for every scope (use `errors.Context` instead) |
@@ -537,6 +636,7 @@ func TestCreateOrder(t *testing.T) {
 | Handlers | `rest.WriteResponse(status, payload).Must(w)` | Forget `.Must(w)` |
 | Middleware | Apply in order: Cancel, Logging, Tracing, ... | Tracing before Logging |
 | Middleware | Register before routes | `router.Use()` after `RegisterApp()` |
+| Metrics | `observability.Init(...)` once at startup, `Shutdown` on exit | A `/metrics` endpoint or `promhttp` / Prometheus registry |
 | Transactions | `storer.Transaction(ctx, fn)` | Manual `Begin`/`Commit`/`Rollback` |
 | Transactions | Use `txCtx` for all queries in transaction | Base context inside transaction |
 | Parsing | `request.ParseResourceUUID(r, param)` | Manual `chi.URLParam()` parsing |

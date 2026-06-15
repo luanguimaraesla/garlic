@@ -13,7 +13,7 @@ import (
 )
 
 // meterName is the instrumentation scope under which garlic's HTTP metrics are
-// recorded. It surfaces as the otel_scope_name label in Prometheus output.
+// recorded. It identifies the source of the metrics on the exported telemetry.
 const meterName = "github.com/luanguimaraesla/garlic"
 
 // durationBuckets are the explicit histogram boundaries (in seconds) for
@@ -44,7 +44,7 @@ var getInstruments = sync.OnceValues(func() (*instruments, error) {
 		metric.WithUnit("{request}"),
 	)
 	if err != nil {
-		return nil, errors.Propagate(err, "failed to create http.server.requests counter")
+		return nil, logInstrumentError(err, "http.server.requests counter")
 	}
 
 	activeRequests, err := meter.Int64UpDownCounter(
@@ -53,7 +53,7 @@ var getInstruments = sync.OnceValues(func() (*instruments, error) {
 		metric.WithUnit("{request}"),
 	)
 	if err != nil {
-		return nil, errors.Propagate(err, "failed to create http.server.active_requests counter")
+		return nil, logInstrumentError(err, "http.server.active_requests counter")
 	}
 
 	duration, err := meter.Float64Histogram(
@@ -63,7 +63,7 @@ var getInstruments = sync.OnceValues(func() (*instruments, error) {
 		metric.WithExplicitBucketBoundaries(durationBuckets...),
 	)
 	if err != nil {
-		return nil, errors.Propagate(err, "failed to create http.server.request.duration histogram")
+		return nil, logInstrumentError(err, "http.server.request.duration histogram")
 	}
 
 	return &instruments{
@@ -73,16 +73,20 @@ var getInstruments = sync.OnceValues(func() (*instruments, error) {
 	}, nil
 })
 
-// resolve returns the lazily built instruments, logging once and returning nil
-// if construction failed. Callers no-op when nil so a metrics failure never
-// breaks request handling.
-func resolve() *instruments {
-	inst, err := getInstruments()
-	if err != nil {
-		logging.Global().Error("Failed to initialize HTTP metrics", errors.Zap(err))
-		return nil
-	}
+// logInstrumentError propagates and logs an instrument-construction failure.
+// It runs inside the sync.OnceValues body, so the failure is logged exactly
+// once rather than on every request.
+func logInstrumentError(err error, name string) error {
+	gerr := errors.Propagate(err, "failed to create "+name)
+	logging.Global().Error("Failed to initialize HTTP metrics", errors.Zap(gerr))
+	return gerr
+}
 
+// resolve returns the lazily built instruments, or nil if construction failed
+// (the failure was already logged once). Callers no-op when nil so a metrics
+// failure never breaks request handling.
+func resolve() *instruments {
+	inst, _ := getInstruments()
 	return inst
 }
 

@@ -23,6 +23,8 @@ package main
 import (
     "context"
     "net/http"
+    "os/signal"
+    "syscall"
 
     chi "github.com/go-chi/chi/v5"
 
@@ -45,7 +47,10 @@ func main() {
     // by middleware.MetricsMonitor to an OTLP collector.
     observability.Init(&observability.Config{ServiceName: "my-api"})
 
-    server := rest.GetServer("api")
+    // Flush the final export interval when the server shuts down.
+    server := rest.GetServer("api", rest.WithOnShutdown(func(ctx context.Context) {
+        _ = observability.Shutdown(ctx)
+    }))
     r := server.Router()
 
     // Protected routes (full middleware stack)
@@ -59,7 +64,11 @@ func main() {
         rest.RegisterApp(r, &HealthApp{})
     })
 
-    errc := server.Listen(context.Background(), ":8080")
+    // Cancel the context on SIGINT/SIGTERM to trigger graceful shutdown.
+    ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+    defer stop()
+
+    errc := server.Listen(ctx, ":8080")
     if err := <-errc; err != nil {
         logging.Global().Fatal(err.Error())
     }
@@ -403,8 +412,11 @@ OTLP/gRPC.
 // Install once at startup, before serving traffic.
 observability.Init(&observability.Config{ServiceName: "my-api"})
 
-// Flush the last interval of metrics on shutdown.
-defer observability.Shutdown(context.Background())
+// Flush the last interval of metrics on graceful shutdown. WithOnShutdown
+// passes a context carrying the server's shutdown deadline.
+server := rest.GetServer("api", rest.WithOnShutdown(func(ctx context.Context) {
+    _ = observability.Shutdown(ctx)
+}))
 ```
 
 The exporter reads the standard OpenTelemetry environment variables, so a
@@ -424,14 +436,18 @@ middleware records into whatever provider is installed.
 ### Instruments
 
 The middleware records three instruments under the meter
-`github.com/luanguimaraesla/garlic`, named per the OpenTelemetry HTTP semantic
-conventions:
+`github.com/luanguimaraesla/garlic`, using the OpenTelemetry HTTP
+semantic-convention attribute keys:
 
 | Instrument | Type | Attributes |
 |------------|------|------------|
 | `http.server.requests` | counter | `http.request.method`, `http.route`, `http.response.status_code` |
 | `http.server.active_requests` | up/down counter | `http.request.method`, `http.route` |
 | `http.server.request.duration` | histogram (seconds) | `http.request.method`, `http.route`, `http.response.status_code` |
+
+`http.server.active_requests` and `http.server.request.duration` are HTTP
+semantic-convention metrics; `http.server.requests` is a garlic-specific request
+counter (its total is also derivable from the histogram's count).
 
 ### Migrating from the Prometheus backend
 

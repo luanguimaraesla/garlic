@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -38,34 +39,55 @@ func Init(config *Config) {
 		logging.Global().Fatal("Failed to create OTLP metrics exporter", errors.Zap(err))
 	}
 
-	res := resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceName(config.ServiceName),
-		semconv.ServiceVersion(global.Version),
-	)
-
 	singleton = sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, readerOptions(config)...)),
-		sdkmetric.WithResource(res),
+		sdkmetric.WithResource(buildResource(config)),
 	)
 
 	otel.SetMeterProvider(singleton)
 }
 
+// buildResource describes this service. It merges with resource.Default() so the
+// telemetry.sdk.* attributes and the OTEL_RESOURCE_ATTRIBUTES / OTEL_SERVICE_NAME
+// environment variables are honored. Configured values take precedence; service
+// name is left to the environment when ServiceName is empty.
+func buildResource(config *Config) *resource.Resource {
+	attrs := []attribute.KeyValue{semconv.ServiceVersion(global.Version)}
+	if config.ServiceName != "" {
+		attrs = append(attrs, semconv.ServiceName(config.ServiceName))
+	}
+
+	res, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(semconv.SchemaURL, attrs...),
+	)
+	if err != nil {
+		logging.Global().Warn(
+			"Telemetry resource has conflicting schema URLs",
+			errors.Zap(errors.Propagate(err, "failed to merge telemetry resource")),
+		)
+	}
+
+	return res
+}
+
 // Shutdown flushes pending metrics and releases the MeterProvider. Call it
 // during graceful shutdown so the last interval of metrics is exported; it
 // pairs well with rest.WithOnShutdown. It is a no-op if [Init] has not been
-// called.
+// called, and it clears the singleton so [Init] may be called again afterwards.
 func Shutdown(ctx context.Context) error {
 	if singleton == nil {
 		return nil
 	}
 
-	if err := singleton.ForceFlush(ctx); err != nil {
+	mp := singleton
+	singleton = nil
+
+	if err := mp.ForceFlush(ctx); err != nil {
 		return errors.Propagate(err, "failed to flush metrics")
 	}
 
-	if err := singleton.Shutdown(ctx); err != nil {
+	if err := mp.Shutdown(ctx); err != nil {
 		return errors.Propagate(err, "failed to shut down meter provider")
 	}
 
