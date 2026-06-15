@@ -7,8 +7,8 @@ SILENT_DEF = 1
 # empty.
 SILENT ?= $(findstring s,$(MAKEFLAGS))
 
-# SILENT_CMD_SUFFIX can be added to most noisy commands commands to make them
-# respect silent mode.
+# SILENT_CMD_SUFFIX can be added to most noisy commands to make them respect
+# silent mode.
 ifeq (s,$(SILENT))
 SILENT_CMD_SUFFIX ?= 2>/dev/null 1>&2
 else

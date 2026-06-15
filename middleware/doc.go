@@ -13,8 +13,10 @@
 //   - [Tracing] — generates a UUID request ID, sets the X-Request-ID response
 //     header, and stores it in context. [PropagateTracing] reads existing
 //     X-Request-ID and X-Session-ID headers from upstream services.
-//   - [MetricsMonitor] — records Prometheus metrics: http_request_total,
-//     http_active_requests, and http_request_duration_seconds.
+//   - [MetricsMonitor] — records OpenTelemetry HTTP metrics:
+//     http.server.requests, http.server.active_requests, and
+//     http.server.request.duration. See the observability package to export
+//     them to an OTLP collector.
 //   - [ContentTypeJson] — sets Content-Type: application/json on every response.
 //   - [Cors] — sets CORS headers from a [Config] and handles OPTIONS preflight.
 //
@@ -27,7 +29,7 @@
 //	    middleware.ContextCancel,    // cancellable context for all handlers
 //	    middleware.Logging,         // logger injected into context
 //	    middleware.Tracing,         // request/session IDs (enriches logger)
-//	    middleware.MetricsMonitor,  // Prometheus metrics
+//	    middleware.MetricsMonitor,  // OpenTelemetry HTTP metrics
 //	    middleware.ContentTypeJson, // JSON content type
 //	    middleware.Cors(cfg),       // CORS headers, OPTIONS short-circuit
 //	)
