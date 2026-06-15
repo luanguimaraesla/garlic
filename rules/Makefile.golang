@@ -7,20 +7,15 @@ ifndef GO_DEF
 GO_DEF = 1
 
 GOSOURCES := $(shell \
-	find . -name '*.go' | \
-	grep -Ev './(proto|protogen|third_party|vendor)/' | \
-	xargs)
+	find . -type f -name '*.go' \
+		-not -path './vendor/*' \
+		-not -path './proto/*' \
+		-not -path './protogen/*' \
+		-not -path './third_party/*')
 
 ifdef DEBUG
 $(info GOSOURCES = $(GOSOURCES))
 endif
-
-# Use linker flags to provide version settings to the target
-# Also build it with as much as possible static links. It may do the build a bit slower
-LDFLAGS=-ldflags "-X=${GIT_REMOTE}/internal/framework/global.Version=$(GIT_VERSION) -extldflags '-static'"
-
-GOBASE := $(shell pwd)
-GOBINDIR := "$(GOBASE)/build"
 
 # Allow users to define GOFLAGS, but override it with flags mandatory for
 # compilation.
@@ -37,22 +32,29 @@ ifdef DEBUG
 $(info GOFLAGS = $(GOFLAGS))
 endif
 
-# Allow users to set custom build tags.
+# Allow users to set custom build tags as a comma-separated list.
 GOBUILDTAGS ?=
+
+# Allow users to set all known build tags by passing ALLTAGS.
+ifdef ALLTAGS
+ifeq (,$(GOBUILDTAGS))
+GOBUILDTAGS := integration
+else
+GOBUILDTAGS := integration,$(GOBUILDTAGS)
+endif
+endif
+
+# Unit tests always run with the 'unit' tag; merge user-provided tags.
+GOTESTTAGS := unit
+ifneq (,$(GOBUILDTAGS))
+GOTESTTAGS := $(GOTESTTAGS),$(GOBUILDTAGS)
+endif
 
 # Allow users to set custom test timeout.
 GOTESTTIMEOUT ?=
 
 # Allow users to run specific tests
 GOTESTRUN ?=
-
-# Allow users to set all known build tags by passing ALLTAGS.
-ifndef .ALLTAGS_GUARD
-.ALLTAGS_GUARD := 1
-ifdef ALLTAGS
-override GOBUILDTAGS := integration $(GOBUILDTAGS)
-endif
-endif
 
 GO ?= go
 GOBUILD ?= $(GO) build
@@ -68,7 +70,6 @@ ifndef .GOSETUP_GUARD
 .GOSETUP_GUARD := 1
 ifneq (,$(GOBUILDTAGS))
 GOBUILD := $(GOBUILD) -tags='$(GOBUILDTAGS)'
-GOTEST := $(GOTEST) -tags='$(GOBUILDTAGS)'
 endif
 ifneq (,$(GOTESTTIMEOUT))
 GOTEST := $(GOTEST) -timeout='$(GOTESTTIMEOUT)'
@@ -89,24 +90,22 @@ go-generate:
 .PHONY: go-install
 go-install:
 	@echo "Installing ${SETTINGS_PROJECT_NAME}"
-	@GOBINDIR=$(GOBINDIR) $(GOINSTALL) $(LDFLAGS) ./...
+	@$(GOINSTALL) ./...
 
 .PHONY: go-clean
 go-clean:
 	@echo "Cleaning build cache"
-	@GOBINDIR=$(GOBINDIR) $(GOCLEAN)
-	rm -rf $(GOBINDIR)
+	$(GOCLEAN)
 
 .PHONY: go-build
 go-build:
-	@echo "Building binary"
-	@mkdir -p $(GOBINDIR)
-	$(GOBUILD) $(LDFLAGS) -o $(GOBINDIR)/ ./cmd/...
+	@echo "Building packages"
+	$(GOBUILD) ./...
 
 .PHONY: go-test
 go-test:
 	@echo "Executing tests"
-	$(GOTEST) -v -tags=unit -coverprofile=coverage.out ./... $(SILENT_CMD_SUFFIX)
+	$(GOTEST) -tags='$(GOTESTTAGS)' -v -coverprofile=coverage.out ./... $(SILENT_CMD_SUFFIX)
 
 .PHONY: go-cover
 go-cover: go-cover/text
@@ -124,8 +123,8 @@ go-fix:
 	@echo "Making sure go.mod matches the source code"
 	$(GOMOD) tidy
 	$(GOMOD) vendor
-ifneq ($(SOURCES),)
-	$(GOIMPORTS) -w $(SOURCES)
+ifneq (,$(GOSOURCES))
+	$(GOIMPORTS) -w $(GOSOURCES)
 endif
 
 .PHONY: go-lint

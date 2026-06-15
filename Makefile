@@ -27,7 +27,7 @@ install: go-install
 .PHONY: uninstall
 uninstall:
 	@echo "Uninstalling ${SETTINGS_PROJECT_NAME}"
-	$rm -f $(GOPATH)/bin/${SETTINGS_PROJECT_NAME}
+	@rm -f $(shell go env GOPATH)/bin/${SETTINGS_PROJECT_NAME}
 
 .PHONY: clean
 clean: go-clean
@@ -76,4 +76,4 @@ lint: go-lint
 .PHONY: image
 image:
 	@echo "> Building dev docker image"
-	docker build -t luanguimaraesla/garlic:dev .
+	docker build -t ${SETTINGS_ORGANIZATION_NAME}/${SETTINGS_PROJECT_NAME}:dev .
