@@ -1,6 +1,6 @@
 module github.com/luanguimaraesla/garlic
 
-go 1.25.5
+go 1.25.11
 
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0
@@ -8,7 +8,7 @@ require (
 	github.com/go-playground/validator/v10 v10.29.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.7.6
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
@@ -16,6 +16,7 @@ require (
 	github.com/wI2L/jsondiff v0.7.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/crypto v0.45.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -46,5 +47,4 @@ require (
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

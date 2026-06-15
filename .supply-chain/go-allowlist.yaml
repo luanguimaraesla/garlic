@@ -1,0 +1,21 @@
+# Go modules allowed to bypass the 7-day release-age cooldown enforced by
+# `hack/check-go-release-age`. Every entry MUST justify why and have an
+# expiry date: the matcher fails closed on entries past their expiry, so
+# stale exceptions stop bypassing the cooldown automatically.
+#
+# Schema:
+#   exclude:
+#     - module: github.com/example/foo
+#       version: v1.2.3          # empty matches every version; only use
+#                                # for trusted internal libraries with no
+#                                # public CVE surface
+#       reason: "CVE-2026-12345 hotfix"
+#       approved_by: "@maintainer"
+#       added: 2026-05-14        # YYYY-MM-DD
+#       expires: 2026-06-14      # YYYY-MM-DD; must be present and in the
+#                                # future, otherwise the matcher ignores
+#                                # the entry and the cooldown applies again
+#
+# A short description of the convention belongs in any PR that touches this
+# file, so reviewers can confirm the exception is justified.
+exclude: []

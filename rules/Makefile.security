@@ -1,0 +1,24 @@
+# Supply-chain and vulnerability targets.
+
+include ./rules/Makefile.settings
+include ./rules/Makefile.golang
+
+ifndef SECURITY_DEF
+SECURITY_DEF = 1
+
+# Pinned to a ≥7-day-old release rather than @latest: the vuln database is
+# fetched at scan time, so freshness comes from vuln.go.dev, not the binary.
+GOVULNCHECK_VERSION ?= v1.1.4
+GOVULNCHECK := $(GORUN) golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+
+.PHONY: security-release-age
+security-release-age:
+	@echo "> Auditing module release age"
+	$(GORUN) ./hack/check-go-release-age
+
+.PHONY: security-govulncheck
+security-govulncheck:
+	@echo "> Running govulncheck"
+	$(GOVULNCHECK) ./...
+
+endif
