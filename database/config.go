@@ -2,11 +2,14 @@ package database
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
+
+	"github.com/luanguimaraesla/garlic/errors"
 )
 
-var ErrConfigInvalidSSLMode = errors.New("invalid SSLMode; valid options are [require, disable]")
+var ErrConfigInvalidSSLMode = errors.New(
+	errors.KindValidationError,
+	"invalid SSLMode; valid options are [require, disable]",
+)
 
 type SSLMode string
 
@@ -49,12 +52,26 @@ func Defaults() *Config {
 func (s *SSLMode) UnmarshalJSON(data []byte) error {
 	var mode string
 	if err := json.Unmarshal(data, &mode); err != nil {
-		return fmt.Errorf("[database] failed unmarshalling database config: %w", err)
+		return errors.PropagateAs(
+			errors.KindValidationError,
+			err,
+			"failed unmarshalling database config",
+			errors.Context(
+				errors.Field("data", string(data)),
+			),
+		)
 	}
 
 	ssm := SSLMode(mode)
 	if _, valid := SSLModes[ssm]; !valid {
-		return fmt.Errorf("[database] failed validating database config: %w", ErrConfigInvalidSSLMode)
+		return errors.PropagateAs(
+			errors.KindValidationError,
+			ErrConfigInvalidSSLMode,
+			"failed validating database config",
+			errors.Context(
+				errors.Field("sslmode", mode),
+			),
+		)
 	}
 
 	*s = ssm

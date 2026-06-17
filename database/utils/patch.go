@@ -6,17 +6,33 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
+
+	"github.com/luanguimaraesla/garlic/errors"
 )
 
 func Named(query string, resource any) (string, []any) {
 	query, args, err := sqlx.Named(query, resource)
 	if err != nil {
-		panic(fmt.Errorf("fatal failure trying to get named query: %w", err))
+		panic(errors.New(
+			errors.KindSystemError,
+			"fatal failure trying to get named query",
+			errors.Context(
+				errors.Field("query", query),
+				errors.Field("error", err.Error()),
+			),
+		))
 	}
 
 	query, args, err = sqlx.In(query, args...)
 	if err != nil {
-		panic(fmt.Errorf("fatal failure trying to get expand named query: %w", err))
+		panic(errors.New(
+			errors.KindSystemError,
+			"fatal failure trying to get expand named query",
+			errors.Context(
+				errors.Field("query", query),
+				errors.Field("error", err.Error()),
+			),
+		))
 	}
 
 	// Specific to postgres

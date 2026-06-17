@@ -64,7 +64,14 @@ func (c *Connector) Request(ctx context.Context, req *Request, result any) error
 func buildURL(baseURL, uri string, params map[string]string) (string, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
-		return "", err
+		return "", errors.PropagateAs(
+			errors.KindSystemError,
+			err,
+			"failed to parse base URL",
+			errors.Context(
+				errors.Field("base_url", baseURL),
+			),
+		)
 	}
 
 	u = u.JoinPath(uri)
