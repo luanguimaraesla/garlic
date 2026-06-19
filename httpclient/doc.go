@@ -1,32 +1,106 @@
-// Package httpclient provides HTTP client functions with exponential backoff
-// retry and a [Connector] for base-URL-scoped requests.
+// Package httpclient provides a production HTTP client built on a
+// client-as-default / request-as-fork model: a [Client] holds shared
+// configuration and a single pooled http.Client, and [Client.R] forks a
+// per-call [Request] that inherits the defaults and overrides them selectively.
 //
-// # Simple Requests
+// # Client
 //
-// Package-level functions perform requests with automatic retry (initial
-// interval 100 ms, max interval 2 s, total max elapsed 1 minute):
+// Build one [Client] per upstream at startup and reuse it (the transport is
+// pooled, so connections are kept alive):
 //
-//	resp, err := httpclient.Get(ctx, "https://api.example.com/users")
-//	resp, err := httpclient.Post(ctx, "https://api.example.com/users", payload)
-//	resp, err := httpclient.Put(ctx, url, payload)
-//	resp, err := httpclient.Patch(ctx, url, payload)
-//	resp, err := httpclient.Delete(ctx, url)
+//	conn, err := httpclient.New(&httpclient.Config{
+//	    BaseURL:     "http://localhost:7233",
+//	    TokenSource: httpclient.FileTokenSource("/var/run/secrets/token"),
+//	    Transport:   otelhttp.NewTransport(nil), // any http.RoundTripper
+//	    Retry:       httpclient.RetryConfig{Enabled: true, MaxRetries: 3},
+//	})
 //
-// All functions propagate X-Request-ID and X-Session-ID headers from the
-// request context for distributed tracing.
+// [Config] carries every shared knob; [Defaults] supplies sensible values.
+// Construction follows the garlic convention (a Config struct, not functional
+// options). The underlying http.Client.Timeout is intentionally left unset so a
+// per-request context deadline always takes effect.
 //
-// # Connector
+// # Requests
 //
-// [Connector] wraps a base URL and provides structured request building:
+// [Client.R] takes the request context (mandatory: it carries the logger,
+// tracing IDs, cancellation, and deadline) and returns a fluent [Request].
+// Request-level setters win over client defaults:
 //
-//	conn := httpclient.NewConnector(&httpclient.Config{URL: "https://api.example.com"})
 //	var user User
-//	err := conn.Request(ctx, &httpclient.Request{
-//	    Method:      http.MethodGet,
-//	    URI:         "/users/123",
-//	    QueryParams: map[string]string{"fields": "name,email"},
-//	}, &user)
+//	_, err := conn.R(ctx).SetResult(&user).Get("/users/" + id)
 //
-// [Connector.Request] validates the response status (200 or 201) and
-// JSON-decodes the body into the result pointer.
+// # Bodies
+//
+// SetBody is polymorphic; explicit setters give precise control. A streamed body
+// with a known size sends an explicit Content-Length instead of chunked
+// encoding, and large uploads are not buffered:
+//
+//	resp, err := conn.R(ctx).
+//	    SetHeader("Content-Type", "application/octet-stream").
+//	    SetBodyStream(file, stat.Size()).
+//	    Put("/files/" + id + "/data")
+//
+// [Request.SetBodyJSON], [Request.SetBodyBytes], [Request.SetFormData], and
+// [Request.SetFileReader] (multipart, streamed via io.Pipe) are also available.
+//
+// # Responses
+//
+// The returned [Response] exposes StatusCode, Header, Bytes, Decode, and the raw
+// http.Response. By default the body is read and the connection returns to the
+// pool; SetDoNotParseResponse leaves the body open for streaming downloads (the
+// caller closes it):
+//
+//	resp, err := conn.R(ctx).SetDoNotParseResponse(true).Get("/files/" + id + "/data")
+//	defer resp.Close()
+//	_, err = io.Copy(dst, resp.Body())
+//
+// # Auth
+//
+// A [TokenSource] is called fresh on every send (and every retry attempt), so a
+// rotating mounted token is always current. [StaticToken] and [FileTokenSource]
+// cover the common cases; a per-request token via SetAuthToken overrides it.
+//
+// # Retry
+//
+// Retry is idempotency-aware: by default only GET, HEAD, OPTIONS, PUT, and
+// DELETE are retried (a streamed, non-replayable body is never retried), on
+// connection errors and the retryable statuses (429, 503, 5xx except 501),
+// honoring Retry-After. [Request.EnableRetry] opts a POST in; [Request.DisableRetry]
+// opts out. The backoff is interruptible: cancelling the context stops it
+// immediately. Supply a custom [RetryPolicy] via [RetryConfig] to change the rules.
+//
+// # Errors
+//
+// A non-2xx response yields a [ResponseError] that wraps a garlic error: it is
+// panic-free for any body shape (DTO, {"message":...}, plain text, HTML, empty),
+// preserves the HTTP status, the Retry-After hint, and selected response headers,
+// and classifies via the kind hierarchy so errors.IsKind still works:
+//
+//	var re *httpclient.ResponseError
+//	if errors.As(err, &re) {
+//	    switch re.StatusCode() {
+//	    case http.StatusNotFound: // ...
+//	    case http.StatusTooManyRequests:
+//	        if d, ok := re.RetryAfter(); ok { time.Sleep(d) }
+//	    }
+//	}
+//
+// # Observability
+//
+// The connector does not import otelhttp. Compose tracing by wrapping the base
+// transport, for example Config.Transport = otelhttp.NewTransport(base); tracing
+// then sits inside or outside the retry loop as you choose. The existing
+// X-Request-ID and X-Session-ID headers are still propagated from the context.
+//
+// # Extension seams
+//
+// Five lightweight seams keep the connector open: a custom http.RoundTripper or
+// *http.Client, a [RetryPolicy], a [TokenSource], and the [BeforeRequestHook] /
+// [AfterResponseHook] middleware chains.
+//
+// # Testing
+//
+// Downstream services depend on the [Requester] interface and inject the
+// builder-pattern [RequesterMock] in unit tests, instead of standing up an
+// httptest server.
 package httpclient
