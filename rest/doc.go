@@ -44,8 +44,11 @@
 //	})
 //
 // When a handler returns a non-nil error, the route wrapper logs it and calls
-// [WriteError] to produce an appropriate JSON response. User errors are
-// returned as-is; system errors are sanitized to prevent leaking internals.
+// [WriteError] to produce an appropriate JSON response. [WriteError] is the one
+// canonical error writer: the HTTP status comes from the error's kind, and the
+// body is projected through [errors.ErrorT.PublicDTO] so user errors (4xx) are
+// exposed in full while system errors (5xx) leak only their classification
+// (code, name, and static description) and never their details or message.
 //
 // # App Interface
 //
@@ -59,7 +62,9 @@
 // # Response Helpers
 //
 // [WriteResponse] writes an arbitrary payload as JSON.
-// [WriteMessage] writes a simple {"message": "..."} response.
-// [WriteError] converts an error to a [DTO] with the correct HTTP status code.
+// [WriteMessage] writes a simple {"message": "..."} response for non-error,
+// informational payloads.
+// [WriteError] converts an error to a sanitized [DTO] with the correct HTTP
+// status code and is the canonical path for error responses.
 // All return a [Response] whose Must method performs the write.
 package rest
