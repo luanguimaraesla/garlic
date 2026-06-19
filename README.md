@@ -102,7 +102,7 @@ func (a *HealthApp) Routes() rest.Routes {
 | [`monitoring`](./monitoring) | OpenTelemetry metrics for HTTP request tracking |
 | [`observability`](./observability) | Installs a MeterProvider that pushes metrics to an OTLP collector |
 | [`tracing`](./tracing) | Request and session ID context propagation |
-| [`httpclient`](./httpclient) | HTTP client with exponential backoff retry and distributed tracing |
+| [`httpclient`](./httpclient) | Pooled HTTP client: pluggable auth, streaming bodies, raw responses, idempotency-aware retry, typed errors, distributed tracing |
 | [`crypto`](./crypto) | AES-256-GCM authenticated encryption and SHA-256 hashing |
 | [`worker`](./worker) | Goroutine pool for background task execution |
 | [`toolkit`](./toolkit) | Generic pointer and nil-checking utilities |
@@ -150,20 +150,44 @@ The `errors` package is the foundation of the framework. Every error carries a *
 
 ### Kind Hierarchy
 
+Kinds form a three-tier hierarchy, distinguished by a code prefix:
+
+- **Primitive kinds (`P`)**: the abstract roots of the hierarchy.
+- **Secondary kinds (`S`)**: one per standard HTTP status, named
+  `HTTP<status>Error` with code `S<status>` (e.g. `HTTP404Error`, `S00404`).
+- **Tertiary kinds (`C`)**: framework-specific errors that descend from the
+  primitive and secondary kinds. Each garlic package owns and registers its own
+  domain-specific tertiary kinds.
+
 ```
-KindError (base, 500)
-├── KindUserError (400)
-│   ├── KindInvalidRequestError (400)
-│   │   └── KindValidationError (400)
-│   ├── KindNotFoundError (404)
-│   │   └── KindDatabaseRecordNotFoundError (404)
-│   ├── KindAuthError (401)
-│   └── KindForbiddenError (403)
-└── KindSystemError (500)
-    ├── KindContextError
-    │   └── KindContextValueNotFoundError
-    └── KindDatabaseTransactionError (500)
+KindError (P00000)
+├── KindUserError (P00001, 400)
+│   └── HTTP4xxError (S004xx)            // one per 4xx status
+│       ├── KindInvalidRequestError (C00001, 400 ← S00400)
+│       ├── KindAuthError (C00003, 401 ← S00401)
+│       ├── KindForbiddenError (C00004, 403 ← S00403)
+│       └── KindNotFoundError (C00005, 404 ← S00404)
+└── KindSystemError (P00002, 500)
+    └── HTTP3xxError / HTTP5xxError (S00xxx)  // one per non-4xx status
 ```
+
+The `errors` package defines only the primitive, secondary, and generic tertiary
+kinds above. Domain packages register their own: `validator` adds
+`ValidationError` (under `KindInvalidRequestError`), `tracing` adds
+`ContextError` / `ContextValueNotFoundError` (under `KindSystemError`), and
+`database` adds `DatabaseRecordNotFoundError` (under `KindNotFoundError`) and
+`DatabaseTransactionError` (under the 500 secondary).
+
+`errors.IsKind(err, KindUserError)` is true for any client (4xx) error and gates
+what crosses the wire: user errors are exposed in full, while system errors are
+sanitized by `ErrorT.PublicDTO` to their code, name, and static description.
+
+`errors.KindForStatus(status)` returns the secondary kind for any HTTP status. At
+init, garlic registers a secondary kind for every standard HTTP status; 4xx
+statuses are classified under `KindUserError` and everything else under
+`KindSystemError`. A non-standard status falls back to its class base. The `P`,
+`S`, and `C` code prefixes are reserved by garlic; custom kinds should use a
+different prefix (see below).
 
 ### Custom Error Kinds
 
@@ -331,8 +355,8 @@ Errors convert to JSON DTOs for API responses. System errors are sanitized autom
 ```go
 dto := err.ErrorDTO()
 // {
-//   "name": "ValidationError::InvalidRequestError::UserError::Error",
-//   "kind": "E00004",
+//   "name": "ValidationError::InvalidRequestError::HTTP400Error::UserError::Error",
+//   "kind": "C00002",
 //   "error": "email is invalid",
 //   "details": {"hint": "provide a valid email address"}
 // }
@@ -552,22 +576,58 @@ type CreateRepoForm struct {
 
 ## Inter-Service Communication
 
-The `httpclient` package provides an HTTP client with exponential backoff retry and automatic propagation of `X-Request-ID` and `X-Session-ID` headers for distributed tracing.
+The `httpclient` package is a pooled HTTP client built on a client-as-default /
+request-as-fork model. Build one client per upstream at startup and reuse it;
+`conn.R(ctx)` forks a per-call request that inherits the defaults. It propagates
+`X-Request-ID` and `X-Session-ID` from the context for distributed tracing.
 
 ```go
-conn := httpclient.NewConnector(&httpclient.Config{
-    URL: "http://order-service:8080",
+conn, err := httpclient.New(&httpclient.Config{
+    BaseURL:     "http://order-service:8080",
+    TokenSource: httpclient.FileTokenSource("/var/run/secrets/token"),
 })
 
 var order OrderDTO
-err := conn.Request(ctx, &httpclient.Request{
-    Method: http.MethodGet,
-    URI:    fmt.Sprintf("/v1/orders/%s", orderID),
-    QueryParams: map[string]string{
-        "include": "items",
-    },
-}, &order)
+resp, err := conn.R(ctx).
+    SetQueryParam("include", "items").
+    SetResult(&order).
+    Get("/v1/orders/" + orderID)
 ```
+
+A non-2xx response returns a typed `*httpclient.ResponseError` that preserves the
+HTTP status, the `Retry-After` hint, and selected headers, and is panic-free for
+any body shape. It still matches `errors.IsKind`, and `errors.As` exposes the
+HTTP detail:
+
+```go
+var re *httpclient.ResponseError
+if errors.As(err, &re) && re.StatusCode() == http.StatusTooManyRequests {
+    if d, ok := re.RetryAfter(); ok {
+        time.Sleep(d)
+    }
+}
+```
+
+Streaming uploads with an explicit `Content-Length`, raw streaming downloads
+(`SetDoNotParseResponse`), pluggable auth via a `TokenSource`, idempotency-aware
+retry (only `GET`/`HEAD`/`OPTIONS`/`PUT`/`DELETE` by default; `EnableRetry` opts a
+`POST` in), a custom transport or `http.RoundTripper`, and before/after
+middleware hooks are all supported. Compose OpenTelemetry by wrapping
+`Config.Transport`; the connector does not import `otelhttp`.
+
+Downstream services that hold an `httpclient.Requester` can inject
+`httpclient.NewRequesterMock()` in `//go:build unit` tests instead of standing up
+an HTTP server.
+
+> **Migration from the old `Connector` API.** `NewConnector`, `Connector.Request`,
+> the `Request{Method, URI, Data, QueryParams}` struct, and the package-level
+> `Get`/`Post`/`Put`/`Patch`/`Delete` functions were removed. Replace
+> `conn.Request(ctx, &Request{Method: http.MethodGet, URI: path}, &out)` with
+> `conn.R(ctx).SetResult(&out).Get(path)`, and construct the client with
+> `httpclient.New(&Config{BaseURL: ...})` (the old `Config.URL` field is now
+> `Config.BaseURL`, still mapped from the `url` config key). Behavior also
+> improves: the request context now reaches the transport (deadlines and
+> cancellation take effect) and retry is gated to idempotent methods.
 
 ## Third-Party Logger Interfaces
 
