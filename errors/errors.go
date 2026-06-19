@@ -164,6 +164,35 @@ func (e *ErrorT) ErrorDTO() *DTO {
 	}
 }
 
+// PublicDTO is the wire-safe projection of an error.
+//
+//   - User-class errors (anything under KindUserError, i.e. 4xx) are safe to
+//     expose in full: name, dynamic message, code, and details all cross the wire.
+//   - Every other error (system/root, i.e. 5xx) is protected: only the static
+//     classification leaves — code, name, and the kind's Description in place of
+//     the dynamic message. The dynamic message and details never cross the wire.
+//
+// Use PublicDTO (not ErrorDTO) when serializing an error into an API response so
+// that internal failures never leak sensitive runtime detail.
+func (e *ErrorT) PublicDTO() *DTO {
+	if e.kind.Is(KindUserError) {
+		return e.ErrorDTO()
+	}
+
+	return &DTO{
+		Name:  e.kind.FQN(),
+		Error: e.kind.Description,
+		Code:  e.kind.Code,
+	}
+}
+
+// Description returns the static, human-readable description of the error's
+// kind. Unlike the dynamic message, it is authored at compile time and is safe
+// to expose to clients.
+func (e *ErrorT) Description() string {
+	return e.kind.Description
+}
+
 // MarshalLogObject encodes the ErrorT instance into a zapcore.ObjectEncoder for structured logging.
 // This method adds the error message, kind, and any additional details from the options map to the
 // encoder. It ensures that all relevant error information is captured in the log, facilitating
@@ -188,6 +217,13 @@ func (e *ErrorT) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 // into applications using the zap logging framework.
 func Zap(err error) zap.Field {
 	if e, ok := err.(*ErrorT); ok {
+		return zap.Object("error", e)
+	}
+
+	// Fall back to the chain so wrapped errors (for example an *ErrorT embedded
+	// in a transport-level error) still log with their full structured context.
+	var e *ErrorT
+	if As(err, &e) {
 		return zap.Object("error", e)
 	}
 

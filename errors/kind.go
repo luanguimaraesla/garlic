@@ -49,12 +49,21 @@ func Register(kinds ...*Kind) {
 // essential for accessing predefined error kinds based on their unique codes,
 // facilitating error handling and categorization within the application.
 func GetByCode(code string) *Kind {
-	kind, ok := registeredCodes[code]
+	kind, ok := LookupByCode(code)
 	if !ok {
 		panic(fmt.Errorf("error kind with code `%s` doesn't exist", code))
 	}
 
 	return kind
+}
+
+// LookupByCode retrieves a registered Kind by its code without panicking. It
+// returns (kind, true) when the code is registered and (nil, false) otherwise.
+// Use it for untrusted input, such as a kind code decoded from a response body
+// received over the wire; use GetByCode for internal codes the program controls.
+func LookupByCode(code string) (*Kind, bool) {
+	kind, ok := registeredCodes[code]
+	return kind, ok
 }
 
 // Get retrieves a Kind instance from the global registry using the provided name.

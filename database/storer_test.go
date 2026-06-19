@@ -86,7 +86,7 @@ func TestStorer_Transaction_fnError(t *testing.T) {
 
 func TestStorer_Transaction_beginError(t *testing.T) {
 	storer := NewStorer(&storeMockImpl{
-		beginErr: errors.New(errors.KindDatabaseTransactionError, "begin failed"),
+		beginErr: errors.New(KindDatabaseTransactionError, "begin failed"),
 	})
 
 	err := storer.Transaction(context.Background(), func(ctx context.Context) error {
