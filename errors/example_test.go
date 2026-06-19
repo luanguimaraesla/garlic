@@ -9,12 +9,12 @@ import (
 )
 
 func ExampleNew() {
-	err := errors.New(errors.KindValidationError, "email is invalid")
+	err := errors.New(errors.KindInvalidRequestError, "email is invalid")
 	fmt.Println(err.Error())
 	fmt.Println(err.Kind().Name)
 	// Output:
 	// email is invalid
-	// ValidationError
+	// InvalidRequestError
 }
 
 func ExamplePropagate() {
@@ -38,15 +38,15 @@ func ExamplePropagateAs() {
 }
 
 func ExampleKind_Is() {
-	fmt.Println(errors.KindValidationError.Is(errors.KindUserError))
-	fmt.Println(errors.KindValidationError.Is(errors.KindSystemError))
+	fmt.Println(errors.KindInvalidRequestError.Is(errors.KindUserError))
+	fmt.Println(errors.KindInvalidRequestError.Is(errors.KindSystemError))
 	// Output:
 	// true
 	// false
 }
 
 func ExampleIsKind() {
-	err := errors.New(errors.KindValidationError, "bad input")
+	err := errors.New(errors.KindInvalidRequestError, "bad input")
 	fmt.Println(errors.IsKind(err, errors.KindUserError))
 	fmt.Println(errors.IsKind(err, errors.KindSystemError))
 	// Output:
@@ -71,14 +71,14 @@ func ExampleTemplate() {
 func ExampleRegister() {
 	kind := &errors.Kind{
 		Name:           "RateLimitError",
-		Code:           "E99001",
+		Code:           "RL0001",
 		Description:    "Too many requests",
 		HTTPStatusCode: http.StatusTooManyRequests,
 		Parent:         errors.KindUserError,
 	}
 	errors.Register(kind)
 
-	retrieved := errors.GetByCode("E99001")
+	retrieved := errors.GetByCode("RL0001")
 	fmt.Println(retrieved.Name)
 	fmt.Println(retrieved.StatusCode())
 	// Output:
@@ -87,12 +87,12 @@ func ExampleRegister() {
 }
 
 func ExampleErrorT_ErrorDTO() {
-	err := errors.New(errors.KindValidationError, "email is invalid",
+	err := errors.New(errors.KindInvalidRequestError, "email is invalid",
 		errors.Hint("provide a valid email address"),
 	)
 	dto := err.ErrorDTO()
 	b, _ := json.Marshal(dto)
 	fmt.Println(string(b))
 	// Output:
-	// {"name":"ValidationError::InvalidRequestError::UserError::Error","error":"email is invalid","kind":"E00004","details":{"hint":"provide a valid email address"}}
+	// {"name":"InvalidRequestError::HTTP400Error::UserError::Error","error":"email is invalid","kind":"C00001","details":{"hint":"provide a valid email address"}}
 }

@@ -140,7 +140,7 @@ func TestContext_fieldsAvailableInTroubleshooting(t *testing.T) {
 }
 
 func TestHint_appearsInDetails(t *testing.T) {
-	err := New(KindValidationError, "bad input",
+	err := New(KindInvalidRequestError, "bad input",
 		Hint("check field %s", "email"),
 	)
 
@@ -150,7 +150,7 @@ func TestHint_appearsInDetails(t *testing.T) {
 }
 
 func TestHint_lastOneWins(t *testing.T) {
-	err := New(KindValidationError, "bad input",
+	err := New(KindInvalidRequestError, "bad input",
 		Hint("first"),
 		Hint("second"),
 	)
@@ -203,33 +203,33 @@ func TestTemplate_callerContextMergesWithTemplate(t *testing.T) {
 // --- Kind hierarchy ---
 
 func TestKind_StatusCode_traversesHierarchy(t *testing.T) {
-	if KindValidationError.StatusCode() != http.StatusBadRequest {
-		t.Errorf("ValidationError: want 400, got %d", KindValidationError.StatusCode())
+	if KindInvalidRequestError.StatusCode() != http.StatusBadRequest {
+		t.Errorf("ValidationError: want 400, got %d", KindInvalidRequestError.StatusCode())
 	}
-	if KindDatabaseRecordNotFoundError.StatusCode() != http.StatusNotFound {
-		t.Errorf("DatabaseRecordNotFoundError: want 404, got %d", KindDatabaseRecordNotFoundError.StatusCode())
+	if KindNotFoundError.StatusCode() != http.StatusNotFound {
+		t.Errorf("NotFoundError: want 404, got %d", KindNotFoundError.StatusCode())
 	}
 }
 
 func TestKind_FQN_buildsFullHierarchy(t *testing.T) {
-	fqn := KindValidationError.FQN()
-	want := "ValidationError::InvalidRequestError::UserError::Error"
+	fqn := KindInvalidRequestError.FQN()
+	want := "InvalidRequestError::HTTP400Error::UserError::Error"
 	if fqn != want {
 		t.Errorf("FQN: want %s, got %s", want, fqn)
 	}
 }
 
 func TestKind_Is_matchesSelfAndParents(t *testing.T) {
-	if !KindValidationError.Is(KindValidationError) {
+	if !KindInvalidRequestError.Is(KindInvalidRequestError) {
 		t.Error("should match self")
 	}
-	if !KindValidationError.Is(KindInvalidRequestError) {
-		t.Error("should match parent")
+	if !KindInvalidRequestError.Is(KindForStatus(http.StatusBadRequest)) {
+		t.Error("should match secondary parent")
 	}
-	if !KindValidationError.Is(KindUserError) {
-		t.Error("should match grandparent")
+	if !KindInvalidRequestError.Is(KindUserError) {
+		t.Error("should match ancestor")
 	}
-	if KindValidationError.Is(KindSystemError) {
+	if KindInvalidRequestError.Is(KindSystemError) {
 		t.Error("should not match unrelated kind")
 	}
 }
@@ -237,16 +237,16 @@ func TestKind_Is_matchesSelfAndParents(t *testing.T) {
 // --- DTO ---
 
 func TestErrorDTO_containsKindAndDetails(t *testing.T) {
-	err := New(KindValidationError, "email invalid",
+	err := New(KindInvalidRequestError, "email invalid",
 		Hint("provide a valid email"),
 	)
 
 	dto := err.ErrorDTO()
-	if dto.Name != KindValidationError.FQN() {
-		t.Errorf("name: want %s, got %s", KindValidationError.FQN(), dto.Name)
+	if dto.Name != KindInvalidRequestError.FQN() {
+		t.Errorf("name: want %s, got %s", KindInvalidRequestError.FQN(), dto.Name)
 	}
-	if dto.Code != KindValidationError.Code {
-		t.Errorf("code: want %s, got %s", KindValidationError.Code, dto.Code)
+	if dto.Code != KindInvalidRequestError.Code {
+		t.Errorf("code: want %s, got %s", KindInvalidRequestError.Code, dto.Code)
 	}
 	if dto.Error != "email invalid" {
 		t.Errorf("error: want 'email invalid', got %s", dto.Error)
