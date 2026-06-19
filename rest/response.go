@@ -16,34 +16,22 @@ type Response struct {
 	Payload    any
 }
 
-var (
-	// We filter internal server errors to provide a standard
-	// response and prevent leaking sensitive information
-	internalServerErrorResponse = WriteResponse(
-		http.StatusInternalServerError,
-		errors.Raw(
-			errors.KindSystemError,
-			"internal server error",
-			errors.Hint("internal server error, please contact the support"),
-		).ErrorDTO(),
-	)
-
-	// This is a generic response for unknown errors
-	unknownErrorResponse = WriteResponse(
-		http.StatusInternalServerError,
-		errors.Raw(
-			errors.KindSystemError,
-			"unknown error",
-			errors.Hint("unknown error, please contact the support"),
-		).ErrorDTO(),
-	)
+// unknownErrorResponse is returned when WriteError is called with a nil error.
+// It is projected through PublicDTO so it carries no sensitive detail.
+var unknownErrorResponse = WriteResponse(
+	http.StatusInternalServerError,
+	errors.Raw(errors.KindSystemError, "unknown error").PublicDTO(),
 )
 
 func (r *Response) Must(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(r.StatusCode)
 	if err := json.NewEncoder(w).Encode(r.Payload); err != nil {
-		http.Error(w, `{"message":"internal server error"}`, http.StatusInternalServerError)
+		// Last-ditch fallback, in the canonical error envelope.
+		http.Error(w,
+			`{"name":"SystemError::Error","error":"Any error that was caused by some unexpected system failure.","kind":"P00002"}`,
+			http.StatusInternalServerError,
+		)
 	}
 }
 
@@ -60,20 +48,23 @@ func WriteMessage(statusCode int, message string) *Response {
 	return WriteResponse(statusCode, PayloadMessage{Message: message})
 }
 
-// WriteError is a helper function to create a response with a service error
-// or a generic error response if the error is not a service error
+// WriteError converts an error into a canonical error response. It is the one
+// blessed path for error responses: the status comes from the error's kind, and
+// the body is projected through [errors.ErrorT.PublicDTO] so user errors are
+// exposed in full while system errors leak only their classification (code,
+// name, and static description). A nil or non-garlic error is treated as an
+// opaque internal failure.
 func WriteError(err error) *Response {
-	// Return unknown error if the callen didn't provide an error
 	if err == nil {
 		return unknownErrorResponse
 	}
 
-	// Return internal server error if the error is not a service error
-	usrErr, ok := errors.AsKind(err, errors.KindUserError)
-	if !ok {
-		return internalServerErrorResponse
+	var e *errors.ErrorT
+	if !errors.As(err, &e) {
+		// A non-garlic error carries no kind; treat it as an opaque internal
+		// failure so nothing sensitive leaks.
+		e = errors.Raw(errors.KindSystemError, "internal server error")
 	}
 
-	statusCode := usrErr.Kind().StatusCode()
-	return WriteResponse(statusCode, usrErr.ErrorDTO())
+	return WriteResponse(e.Kind().StatusCode(), e.PublicDTO())
 }

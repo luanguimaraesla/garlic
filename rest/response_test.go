@@ -72,13 +72,17 @@ func TestWriteError_nil_returnsUnknownError(t *testing.T) {
 	if !ok {
 		t.Fatal("payload is not *errors.DTO")
 	}
-	if dto.Error != "unknown error" {
-		t.Errorf("error message: want 'unknown error', got %q", dto.Error)
+	if dto.Code != errors.KindSystemError.Code {
+		t.Errorf("code: want %q, got %q", errors.KindSystemError.Code, dto.Code)
+	}
+	if dto.Error != errors.KindSystemError.Description {
+		t.Errorf("error: want the kind description, got %q", dto.Error)
 	}
 }
 
 func TestWriteError_systemError_returnsSanitized500(t *testing.T) {
-	err := errors.New(errors.KindSystemError, "database connection pool exhausted")
+	err := errors.New(errors.KindSystemError, "database connection pool exhausted",
+		errors.Hint("internal detail"))
 	resp := WriteError(err)
 
 	if resp.StatusCode != http.StatusInternalServerError {
@@ -89,9 +93,40 @@ func TestWriteError_systemError_returnsSanitized500(t *testing.T) {
 	if !ok {
 		t.Fatal("payload is not *errors.DTO")
 	}
-	// System errors must be sanitized, never leaking the real message
+	// System errors must be sanitized: real message replaced by the static
+	// description, and details stripped entirely.
 	if dto.Error == "database connection pool exhausted" {
 		t.Error("system error message was leaked to the client")
+	}
+	if dto.Error != errors.KindSystemError.Description {
+		t.Errorf("system error should expose the kind description, got %q", dto.Error)
+	}
+	if dto.Code != errors.KindSystemError.Code {
+		t.Errorf("code: want %q, got %q", errors.KindSystemError.Code, dto.Code)
+	}
+	if len(dto.Details) != 0 {
+		t.Errorf("system error details must be stripped, got %v", dto.Details)
+	}
+}
+
+func TestWriteError_specificSystemError_preservesStatusAndCode(t *testing.T) {
+	unavailable := errors.KindForStatus(http.StatusServiceUnavailable)
+	err := errors.New(unavailable, "upstream timeout: 10.0.0.5")
+	resp := WriteError(err)
+
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status: want 503, got %d", resp.StatusCode)
+	}
+
+	dto := resp.Payload.(*errors.DTO)
+	if dto.Code != unavailable.Code {
+		t.Errorf("code: want %q, got %q", unavailable.Code, dto.Code)
+	}
+	if dto.Error == "upstream timeout: 10.0.0.5" {
+		t.Error("specific system error message leaked")
+	}
+	if dto.Error != unavailable.Description {
+		t.Errorf("should expose the kind description, got %q", dto.Error)
 	}
 }
 
@@ -117,8 +152,8 @@ func TestWriteError_userError_returnsDetailedResponse(t *testing.T) {
 	}
 }
 
-func TestWriteError_validationError_returns400(t *testing.T) {
-	err := errors.New(errors.KindValidationError, "email is invalid")
+func TestWriteError_invalidRequestError_returns400(t *testing.T) {
+	err := errors.New(errors.KindInvalidRequestError, "email is invalid")
 	resp := WriteError(err)
 
 	if resp.StatusCode != http.StatusBadRequest {
@@ -132,6 +167,17 @@ func TestWriteError_nonGarlicError_returnsSanitized500(t *testing.T) {
 
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("status: want 500, got %d", resp.StatusCode)
+	}
+
+	dto, ok := resp.Payload.(*errors.DTO)
+	if !ok {
+		t.Fatal("payload is not *errors.DTO")
+	}
+	if dto.Code != errors.KindSystemError.Code {
+		t.Errorf("code: want %q, got %q", errors.KindSystemError.Code, dto.Code)
+	}
+	if dto.Error == "raw stdlib error" {
+		t.Error("non-garlic error message was leaked")
 	}
 }
 
