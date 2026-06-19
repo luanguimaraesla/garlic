@@ -357,10 +357,14 @@ func (a *API) Create(w http.ResponseWriter, r *http.Request) error {
 
 When a handler returns a non-nil error, the wrapper:
 1. Logs with `errors.Zap(err)` (Warn for user errors, Error for system errors)
-2. Calls `rest.WriteError(err).Must(w)` which:
-   - Returns the error's DTO with `Kind.StatusCode()` for user errors
-   - Returns a generic 500 "internal server error" for system errors (prevents
-     leaking internal details)
+2. Calls `rest.WriteError(err).Must(w)`, the one canonical error writer, which
+   projects the error through `errors.ErrorT.PublicDTO`:
+   - User errors (4xx) are exposed in full — name, message, code, details/hints
+     — with `Kind.StatusCode()` as the status.
+   - System errors (5xx) keep their real status and code but expose only the
+     kind's static `Description`; the dynamic message and details are stripped,
+     so internal detail never leaks.
+   - `rest.WriteMessage` is for non-error informational responses only.
 
 ### Response helpers
 
@@ -619,6 +623,54 @@ func TestCreateOrder(t *testing.T) {
 }
 ```
 
+## 9. Outbound HTTP (httpclient)
+
+### Rules
+
+- **ALWAYS** build one shared `httpclient.New(config)` client per upstream at
+  startup and reuse it — the transport is pooled. **NEVER** build a client per
+  call.
+- **ALWAYS** fork per call with `conn.R(ctx)`, passing the request-scoped `ctx`
+  so tracing headers and cancellation propagate. The context reaches the
+  transport, so a `context.WithTimeout` actually applies.
+- **ALWAYS** depend on the `httpclient.Requester` interface in services, and
+  inject `httpclient.NewRequesterMock()` in `//go:build unit` tests. **NEVER**
+  stand up an `httptest` server in a service test just to fake one call.
+- **ALWAYS** treat outbound errors with `errors.IsKind`; the typed
+  `*httpclient.ResponseError` (via `errors.As`) carries `StatusCode()`,
+  `RetryAfter()`, and selected headers, and is panic-free for any body shape.
+- **ALWAYS** reclassify an upstream error with `errors.PropagateAs(...)` before
+  re-emitting it if its kind should not surface to your own client (a decoded
+  upstream 404 is a user-class error by default and would otherwise be exposed).
+- **NEVER** rely on a `POST` being retried — retry is idempotency-gated by
+  default. Use `EnableRetry()` for a `POST` you know is safe to replay, or pass a
+  custom `RetryPolicy`.
+- **NEVER** log tokens or set `Authorization` from a logged value; pass auth via
+  a `TokenSource` (`StaticToken`, `FileTokenSource`), which is read fresh per
+  attempt.
+
+### Example
+
+```go
+conn, err := httpclient.New(&httpclient.Config{
+    BaseURL:     "http://orders:8080",
+    TokenSource: httpclient.FileTokenSource("/var/run/secrets/token"),
+})
+
+var order OrderDTO
+resp, err := conn.R(ctx).SetResult(&order).Get("/v1/orders/" + id)
+if err != nil {
+    var re *httpclient.ResponseError
+    if errors.As(err, &re) && re.StatusCode() == http.StatusTooManyRequests {
+        if d, ok := re.RetryAfter(); ok { time.Sleep(d) }
+    }
+    return errors.Propagate(err, "failed to fetch order")
+}
+```
+
+Compose OpenTelemetry by wrapping `Config.Transport` with
+`otelhttp.NewTransport(base)`; the connector does not import `otelhttp`.
+
 ## Quick Reference
 
 | Area | ALWAYS | NEVER |
@@ -642,4 +694,8 @@ func TestCreateOrder(t *testing.T) {
 | Parsing | `request.ParseResourceUUID(r, param)` | Manual `chi.URLParam()` parsing |
 | Parsing | `request.ParseForm[T](r, &form)` | Manual JSON decode without validation |
 | Validator | `validator.ParseValidationErrors(err)` | Raw go-playground errors in responses |
+| HTTP client | One shared `httpclient.New(config)`, fork with `conn.R(ctx)` | A new client per call |
+| HTTP client | Depend on `httpclient.Requester`, inject `RequesterMock` in tests | An `httptest` server in service tests |
+| HTTP client | `errors.As(err, &re)` for status/Retry-After, `errors.IsKind` to classify | Assuming a body shape or that `POST` retries |
+| HTTP client | Auth via a `TokenSource` | Logging tokens or hardcoding `Authorization` |
 | Tests | `//go:build unit` on all unit tests | Omitting the build tag |
