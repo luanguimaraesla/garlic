@@ -361,11 +361,11 @@ When a handler returns a non-nil error, the wrapper:
    projects the error through `errors.ErrorT.PublicDTO`:
    - User errors (4xx) are exposed in full — name, message, code, details/hints
      — with `Kind.StatusCode()` as the status.
-   - System errors (5xx) keep their real HTTP status, but the body is
-     genericized to that status: only the per-status kind code and the standard
-     HTTP status text cross the wire. The leaf kind's name and code, the dynamic
-     message, and details are all stripped, so distinct system kinds are
-     indistinguishable to clients.
+   - System errors (5xx) keep their real HTTP status, but the body is redacted
+     to a reference: the kind's code (so a client can quote it to support) plus
+     the standard HTTP status text. The kind name, the static `Description`, the
+     dynamic message, and details are all stripped, so the code identifies the
+     failure without describing it.
    - `rest.WriteMessage` is for non-error informational responses only.
 
 ### Response helpers

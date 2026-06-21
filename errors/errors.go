@@ -168,11 +168,11 @@ func (e *ErrorT) ErrorDTO() *DTO {
 //
 //   - User-class errors (anything under KindUserError, i.e. 4xx) are safe to
 //     expose in full: name, dynamic message, code, and details all cross the wire.
-//   - Every other error (system/root, i.e. 5xx) is genericized to its HTTP
-//     status. The wire carries only the per-status secondary kind's code and the
-//     standard status text; the leaf kind's name and code, its dynamic message,
-//     and its details never cross the wire. Distinct system kinds that share a
-//     status are therefore indistinguishable to clients.
+//   - Every other error (system/root, i.e. 5xx) is redacted to an opaque
+//     reference: the wire carries the kind's Code, which a client can quote to
+//     support to identify the failure, plus the standard HTTP status text. The
+//     kind's name, its dynamic message, and its details never cross the wire, so
+//     the code is an identifier only, not a description of what went wrong.
 //
 // Use PublicDTO (not ErrorDTO) when serializing an error into an API response so
 // that internal failures never leak sensitive runtime detail.
@@ -181,10 +181,9 @@ func (e *ErrorT) PublicDTO() *DTO {
 		return e.ErrorDTO()
 	}
 
-	generic := KindForStatus(e.kind.StatusCode())
 	return &DTO{
-		Error: generic.Description,
-		Code:  generic.Code,
+		Error: KindForStatus(e.kind.StatusCode()).Description,
+		Code:  e.kind.Code,
 	}
 }
 

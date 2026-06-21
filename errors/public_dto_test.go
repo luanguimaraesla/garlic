@@ -31,8 +31,8 @@ func TestPublicDTO_systemError_sanitized(t *testing.T) {
 	dto := err.PublicDTO()
 
 	status := KindSystemError.StatusCode()
-	if dto.Code != KindForStatus(status).Code {
-		t.Errorf("code = %q, want the generic per-status code %q", dto.Code, KindForStatus(status).Code)
+	if dto.Code != KindSystemError.Code {
+		t.Errorf("code = %q, want the kind code %q", dto.Code, KindSystemError.Code)
 	}
 	if dto.Error != http.StatusText(status) {
 		t.Errorf("error = %q, want the standard status text %q", dto.Error, http.StatusText(status))
@@ -50,6 +50,9 @@ func TestPublicDTO_systemError_sanitized(t *testing.T) {
 
 func TestPublicDTO_rootError_protected(t *testing.T) {
 	dto := New(KindError, "raw internals").PublicDTO()
+	if dto.Code != KindError.Code {
+		t.Errorf("root error code = %q, want %q", dto.Code, KindError.Code)
+	}
 	if dto.Error != http.StatusText(http.StatusInternalServerError) {
 		t.Errorf("root error should be protected like a 500 system error, got %q", dto.Error)
 	}
@@ -61,28 +64,24 @@ func TestPublicDTO_rootError_protected(t *testing.T) {
 	}
 }
 
-// A domain-specific system kind (as a downstream package would register) must be
-// indistinguishable from any other system error at the same HTTP status: its
-// name, code, description, and dynamic message all stay server-side.
-func TestPublicDTO_tertiarySystemKind_genericized(t *testing.T) {
+// A domain-specific system kind (as a downstream package would register) sends
+// its own code so a client can quote it to support, but nothing else: the name,
+// the static description, and the dynamic message all stay server-side.
+func TestPublicDTO_tertiarySystemKind_codeOnly(t *testing.T) {
 	kind := &Kind{
 		Name:        "TemporalUnavailable",
-		Code:        "X00001",
+		Code:        "K000569",
 		Description: "the temporal cluster is unreachable",
 		Parent:      KindForStatus(http.StatusServiceUnavailable),
 	}
 
 	dto := New(kind, "dial tcp 10.0.0.5:7233: connection refused").PublicDTO()
 
+	if dto.Code != kind.Code {
+		t.Errorf("code = %q, want the specific kind code %q as a support reference", dto.Code, kind.Code)
+	}
 	if dto.Name != "" {
 		t.Errorf("leaf kind name leaked: %q", dto.Name)
-	}
-	if dto.Code == kind.Code {
-		t.Error("leaf kind code leaked")
-	}
-	if dto.Code != KindForStatus(http.StatusServiceUnavailable).Code {
-		t.Errorf("code = %q, want generic per-status code %q",
-			dto.Code, KindForStatus(http.StatusServiceUnavailable).Code)
 	}
 	if dto.Error != http.StatusText(http.StatusServiceUnavailable) {
 		t.Errorf("error = %q, want standard status text %q",

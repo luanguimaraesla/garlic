@@ -72,9 +72,8 @@ func TestWriteError_nil_returnsUnknownError(t *testing.T) {
 	if !ok {
 		t.Fatal("payload is not *errors.DTO")
 	}
-	want := errors.KindForStatus(http.StatusInternalServerError)
-	if dto.Code != want.Code {
-		t.Errorf("code: want %q, got %q", want.Code, dto.Code)
+	if dto.Code != errors.KindSystemError.Code {
+		t.Errorf("code: want %q, got %q", errors.KindSystemError.Code, dto.Code)
 	}
 	if dto.Error != http.StatusText(http.StatusInternalServerError) {
 		t.Errorf("error: want the standard status text, got %q", dto.Error)
@@ -97,18 +96,17 @@ func TestWriteError_systemError_returnsSanitized500(t *testing.T) {
 	if !ok {
 		t.Fatal("payload is not *errors.DTO")
 	}
-	// System errors are genericized to their HTTP status: the dynamic message is
-	// replaced by the standard status text, the name is dropped, and details are
-	// stripped entirely.
-	want := errors.KindForStatus(http.StatusInternalServerError)
+	// System errors are redacted to a reference: the dynamic message is replaced
+	// by the standard status text, the name is dropped, and details are stripped
+	// entirely, but the kind code stays so the client can quote it to support.
 	if dto.Error == "database connection pool exhausted" {
 		t.Error("system error message was leaked to the client")
 	}
 	if dto.Error != http.StatusText(http.StatusInternalServerError) {
 		t.Errorf("system error should expose the standard status text, got %q", dto.Error)
 	}
-	if dto.Code != want.Code {
-		t.Errorf("code: want %q, got %q", want.Code, dto.Code)
+	if dto.Code != errors.KindSystemError.Code {
+		t.Errorf("code: want %q, got %q", errors.KindSystemError.Code, dto.Code)
 	}
 	if dto.Name != "" {
 		t.Errorf("system error name must not cross the wire, got %q", dto.Name)
@@ -182,9 +180,8 @@ func TestWriteError_nonGarlicError_returnsSanitized500(t *testing.T) {
 	if !ok {
 		t.Fatal("payload is not *errors.DTO")
 	}
-	want := errors.KindForStatus(http.StatusInternalServerError)
-	if dto.Code != want.Code {
-		t.Errorf("code: want %q, got %q", want.Code, dto.Code)
+	if dto.Code != errors.KindSystemError.Code {
+		t.Errorf("code: want %q, got %q", errors.KindSystemError.Code, dto.Code)
 	}
 	if dto.Error == "raw stdlib error" {
 		t.Error("non-garlic error message was leaked")

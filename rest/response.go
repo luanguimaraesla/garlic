@@ -29,7 +29,7 @@ func (r *Response) Must(w http.ResponseWriter) {
 	if err := json.NewEncoder(w).Encode(r.Payload); err != nil {
 		// Last-ditch fallback, in the canonical error envelope.
 		http.Error(w,
-			`{"name":"SystemError::Error","error":"Any error that was caused by some unexpected system failure.","kind":"P00002"}`,
+			`{"error":"Internal Server Error","kind":"P00002"}`,
 			http.StatusInternalServerError,
 		)
 	}
@@ -51,9 +51,9 @@ func WriteMessage(statusCode int, message string) *Response {
 // WriteError converts an error into a canonical error response. It is the one
 // blessed path for error responses: the status comes from the error's kind, and
 // the body is projected through [errors.ErrorT.PublicDTO] so user errors are
-// exposed in full while system errors are genericized to their HTTP status (only
-// a per-status code and the standard status text cross the wire). A nil or
-// non-garlic error is treated as an opaque internal failure.
+// exposed in full while system errors are redacted to a reference (the kind code
+// plus the standard status text, nothing else). A nil or non-garlic error is
+// treated as an opaque internal failure.
 func WriteError(err error) *Response {
 	if err == nil {
 		return unknownErrorResponse
