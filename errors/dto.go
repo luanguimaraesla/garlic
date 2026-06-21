@@ -9,7 +9,7 @@ type Transferable interface {
 }
 
 type DTO struct {
-	Name    string         `json:"name" mapstructure:"name"`
+	Name    string         `json:"name,omitempty" mapstructure:"name,omitempty"`
 	Error   string         `json:"error" mapstructure:"error"`
 	Code    string         `json:"kind" mapstructure:"kind"`
 	Details map[string]any `json:"details,omitempty" mapstructure:"details,omitempty"`

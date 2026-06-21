@@ -174,8 +174,10 @@ small set of generic tertiary kinds. Domain packages add their own. For example,
 errors, and `database` registers record-not-found and transaction errors.
 
 Use `errors.IsKind(err, errors.KindUserError)` to match any client-side error.
-User errors are exposed in full. System errors are reduced by `ErrorT.PublicDTO`
-to their code, name, and static description.
+User errors are exposed in full. System errors are genericized by
+`ErrorT.PublicDTO` to their HTTP status: only a per-status code and the standard
+status text cross the wire, so the specific kind, its dynamic message, and its
+details never leak.
 
 `errors.KindForStatus(status)` returns the secondary kind for a status code.
 Garlic registers one for every standard HTTP status during initialization. A

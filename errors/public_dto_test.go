@@ -2,7 +2,11 @@
 
 package errors
 
-import "testing"
+import (
+	"net/http"
+	"strings"
+	"testing"
+)
 
 func TestPublicDTO_userError_exposedInFull(t *testing.T) {
 	err := New(KindInvalidRequestError, "email is invalid", Hint("use a valid email"))
@@ -26,14 +30,18 @@ func TestPublicDTO_systemError_sanitized(t *testing.T) {
 
 	dto := err.PublicDTO()
 
-	if dto.Error != KindSystemError.Description {
-		t.Errorf("system error should expose the kind Description, got %q", dto.Error)
+	status := KindSystemError.StatusCode()
+	if dto.Code != KindForStatus(status).Code {
+		t.Errorf("code = %q, want the generic per-status code %q", dto.Code, KindForStatus(status).Code)
 	}
-	if dto.Error == "connection to 10.0.0.5 failed" {
+	if dto.Error != http.StatusText(status) {
+		t.Errorf("error = %q, want the standard status text %q", dto.Error, http.StatusText(status))
+	}
+	if dto.Name != "" {
+		t.Errorf("system error name must not cross the wire, got %q", dto.Name)
+	}
+	if strings.Contains(dto.Error, "10.0.0.5") {
 		t.Error("the dynamic system message must not leak")
-	}
-	if dto.Code != KindSystemError.Code {
-		t.Errorf("code should be preserved, got %q", dto.Code)
 	}
 	if len(dto.Details) != 0 {
 		t.Errorf("system error details must be stripped, got %v", dto.Details)
@@ -42,8 +50,46 @@ func TestPublicDTO_systemError_sanitized(t *testing.T) {
 
 func TestPublicDTO_rootError_protected(t *testing.T) {
 	dto := New(KindError, "raw internals").PublicDTO()
-	if dto.Error != KindError.Description {
-		t.Errorf("root error should be protected like a system error, got %q", dto.Error)
+	if dto.Error != http.StatusText(http.StatusInternalServerError) {
+		t.Errorf("root error should be protected like a 500 system error, got %q", dto.Error)
+	}
+	if dto.Name != "" {
+		t.Errorf("root error name must not cross the wire, got %q", dto.Name)
+	}
+	if dto.Error == "raw internals" {
+		t.Error("root error dynamic message leaked")
+	}
+}
+
+// A domain-specific system kind (as a downstream package would register) must be
+// indistinguishable from any other system error at the same HTTP status: its
+// name, code, description, and dynamic message all stay server-side.
+func TestPublicDTO_tertiarySystemKind_genericized(t *testing.T) {
+	kind := &Kind{
+		Name:        "TemporalUnavailable",
+		Code:        "X00001",
+		Description: "the temporal cluster is unreachable",
+		Parent:      KindForStatus(http.StatusServiceUnavailable),
+	}
+
+	dto := New(kind, "dial tcp 10.0.0.5:7233: connection refused").PublicDTO()
+
+	if dto.Name != "" {
+		t.Errorf("leaf kind name leaked: %q", dto.Name)
+	}
+	if dto.Code == kind.Code {
+		t.Error("leaf kind code leaked")
+	}
+	if dto.Code != KindForStatus(http.StatusServiceUnavailable).Code {
+		t.Errorf("code = %q, want generic per-status code %q",
+			dto.Code, KindForStatus(http.StatusServiceUnavailable).Code)
+	}
+	if dto.Error != http.StatusText(http.StatusServiceUnavailable) {
+		t.Errorf("error = %q, want standard status text %q",
+			dto.Error, http.StatusText(http.StatusServiceUnavailable))
+	}
+	if strings.Contains(dto.Error, "temporal") || strings.Contains(dto.Error, "10.0.0.5") {
+		t.Errorf("leaf description or dynamic message leaked: %q", dto.Error)
 	}
 }
 

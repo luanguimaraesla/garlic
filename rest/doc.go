@@ -47,8 +47,9 @@
 // [WriteError] to produce an appropriate JSON response. [WriteError] is the one
 // canonical error writer: the HTTP status comes from the error's kind, and the
 // body is projected through [errors.ErrorT.PublicDTO] so user errors (4xx) are
-// exposed in full while system errors (5xx) leak only their classification
-// (code, name, and static description) and never their details or message.
+// exposed in full while system errors (5xx) are genericized to their HTTP status
+// (only a per-status code and the standard status text) and never leak the
+// specific kind, its message, or its details.
 //
 // # App Interface
 //

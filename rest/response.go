@@ -51,9 +51,9 @@ func WriteMessage(statusCode int, message string) *Response {
 // WriteError converts an error into a canonical error response. It is the one
 // blessed path for error responses: the status comes from the error's kind, and
 // the body is projected through [errors.ErrorT.PublicDTO] so user errors are
-// exposed in full while system errors leak only their classification (code,
-// name, and static description). A nil or non-garlic error is treated as an
-// opaque internal failure.
+// exposed in full while system errors are genericized to their HTTP status (only
+// a per-status code and the standard status text cross the wire). A nil or
+// non-garlic error is treated as an opaque internal failure.
 func WriteError(err error) *Response {
 	if err == nil {
 		return unknownErrorResponse
