@@ -5,9 +5,12 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/luanguimaraesla/garlic)](https://goreportcard.com/report/github.com/luanguimaraesla/garlic)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-Garlic is a Go framework that provides the essential building blocks for developing microservices. It covers the most common concerns -- structured logging, HTTP routing, request parsing, error handling, database access, metrics, tracing, and background workers -- so that teams can focus on business logic instead of reinventing infrastructure plumbing for every new service.
+Garlic is a small Go framework for building HTTP services. It handles the
+boring parts so each service can focus on business logic: routing, structured
+errors, logging, metrics, tracing, request parsing, database helpers, HTTP
+clients, and workers.
 
-Garlic is consumed as a library (no main entry point). Import only the packages you need.
+Garlic is a library, not an application. Import only the packages you need.
 
 ## Installation
 
@@ -15,7 +18,7 @@ Garlic is consumed as a library (no main entry point). Import only the packages 
 go get github.com/luanguimaraesla/garlic
 ```
 
-## Quick Start
+## Quick start
 
 ```go
 package main
@@ -43,17 +46,14 @@ func main() {
         },
     })
 
-    // Install an OpenTelemetry MeterProvider that pushes the metrics recorded
-    // by middleware.MetricsMonitor to an OTLP collector.
     observability.Init(&observability.Config{ServiceName: "my-api"})
 
-    // Flush the final export interval when the server shuts down.
     server := rest.GetServer("api", rest.WithOnShutdown(func(ctx context.Context) {
         _ = observability.Shutdown(ctx)
     }))
+
     r := server.Router()
 
-    // Protected routes (full middleware stack)
     r.Group(func(r chi.Router) {
         r.Use(
             middleware.Logging,
@@ -61,10 +61,10 @@ func main() {
             middleware.MetricsMonitor,
             middleware.ContentTypeJson,
         )
+
         rest.RegisterApp(r, &HealthApp{})
     })
 
-    // Cancel the context on SIGINT/SIGTERM to trigger graceful shutdown.
     ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
     defer stop()
 
@@ -88,78 +88,75 @@ func (a *HealthApp) Routes() rest.Routes {
 
 ## Packages
 
-| Package | Description |
-|---------|-------------|
-| [`errors`](./errors) | Rich error type with kind hierarchy, context propagation, and HTTP status mapping |
+| Package | What it gives you |
+|---------|-------------------|
+| [`errors`](./errors) | Rich errors with kind hierarchy, context propagation, and HTTP status mapping |
 | [`rest`](./rest) | Chi-based HTTP server with error-aware handlers and JSON response helpers |
-| [`middleware`](./middleware) | HTTP middleware: logging, tracing, OpenTelemetry metrics, CORS, content-type |
-| [`request`](./request) | Request parsing helpers for path params, query strings, and JSON bodies |
-| [`database`](./database) | PostgreSQL abstraction with CRUD, transactions, filtering, and mocking |
+| [`middleware`](./middleware) | HTTP middleware for logging, tracing, OpenTelemetry metrics, CORS, and content type |
+| [`request`](./request) | Helpers for path params, query strings, JSON bodies, validation, and model conversion |
+| [`database`](./database) | PostgreSQL helpers for CRUD, transactions, filtering, and mocks |
 | [`database/utils`](./database/utils) | Named query helpers, patch bindings, and PostgreSQL type converters |
-| [`logging`](./logging) | Singleton Zap-based structured logger with context integration |
-| [`logging/keyvals`](./logging/keyvals) | Adapter from garlic's logger to keyvals-style logger interfaces (Temporal SDK, go-kit log, log15) |
-| [`validator`](./validator) | Singleton go-playground/validator with custom field validators |
-| [`monitoring`](./monitoring) | OpenTelemetry metrics for HTTP request tracking |
-| [`observability`](./observability) | Installs a MeterProvider that pushes metrics to an OTLP collector |
-| [`tracing`](./tracing) | Request and session ID context propagation |
-| [`httpclient`](./httpclient) | Pooled HTTP client: pluggable auth, streaming bodies, raw responses, idempotency-aware retry, typed errors, distributed tracing |
+| [`logging`](./logging) | Singleton Zap logger with context integration |
+| [`logging/keyvals`](./logging/keyvals) | Adapter for keyvals-style logger interfaces, such as Temporal SDK, go-kit log, and log15 |
+| [`validator`](./validator) | Singleton go-playground/validator setup with custom field validators |
+| [`monitoring`](./monitoring) | OpenTelemetry HTTP request metrics |
+| [`observability`](./observability) | OpenTelemetry MeterProvider setup that exports metrics over OTLP/gRPC |
+| [`tracing`](./tracing) | Request and session ID propagation through context and headers |
+| [`httpclient`](./httpclient) | Pooled HTTP client with auth, streaming, typed errors, tracing, and idempotency-aware retry |
 | [`crypto`](./crypto) | AES-256-GCM authenticated encryption and SHA-256 hashing |
-| [`worker`](./worker) | Goroutine pool for background task execution |
-| [`toolkit`](./toolkit) | Generic pointer and nil-checking utilities |
-| [`test`](./test) | Builder-pattern HTTP test case utilities |
-| [`global`](./global) | Application-level metadata (version) |
-| [`utils`](./utils) | Struct flattening with mapstructure tags |
-| [`debug`](./debug) | Pretty-print and debugger breakpoint utilities |
+| [`worker`](./worker) | Goroutine pool for background tasks |
+| [`toolkit`](./toolkit) | Generic pointer and nil-checking helpers |
+| [`test`](./test) | Builder-pattern HTTP test helpers |
+| [`global`](./global) | Application metadata, such as version information |
+| [`utils`](./utils) | Struct flattening with `mapstructure` tags |
+| [`debug`](./debug) | Pretty-printing and debugger helpers |
 
-## Architecture
+## How the pieces fit together
 
-```
-                          ┌────────────┐
-                          │   rest     │
-                          │  (server)  │
-                          └─────┬──────┘
-                                │
-               ┌────────────────┼────────────────┐
-               │                │                │
-        ┌──────▼──────┐  ┌─────▼──────┐  ┌──────▼──────┐
-        │  middleware  │  │  request   │  │  monitoring │
-        └──────┬──────┘  └─────┬──────┘  └─────────────┘
-               │               │
-     ┌─────────┼─────────┐     │
-     │         │         │     │
-┌────▼───┐ ┌──▼────┐ ┌──▼─────▼──┐
-│logging │ │tracing│ │ validator │
-└────────┘ └───────┘ └───────────┘
+```text
+HTTP request
+    │
+    ▼
+  rest ─────────────┐
+    │               │
+    ▼               ▼
+middleware       request
+    │               │
+    ▼               ▼
+ logging         validator
+ tracing
+ monitoring
 
-        ┌──────────┐    ┌────────────┐
-        │ database │    │ httpclient │
-        └────┬─────┘    └──────┬─────┘
-             │                 │
-             └────────┬────────┘
-                      │
-                ┌─────▼─────┐
-                │  errors   │
-                └───────────┘
+database ─┐
+httpclient├── errors
+worker ───┘
 ```
 
-All packages depend on `errors` for structured error handling. The `logging` and `tracing` packages provide context values consumed by middleware and propagated through request handlers.
+Most packages use `errors` so failures carry a kind, context fields, stack
+traces, and an HTTP status. `logging` and `tracing` store request-scoped values
+in `context.Context`, and middleware makes those values available to handlers.
 
-## Error Handling
+## Error handling
 
-The `errors` package is the foundation of the framework. Every error carries a **kind** that classifies it. Kinds form a hierarchy that maps automatically to HTTP status codes, so handlers never need to set status codes manually. When a handler returns an error, the `rest` package logs it, converts it to a JSON DTO, and responds with the correct status code. System errors are sanitized so internal details are never leaked to clients.
+The `errors` package is the center of Garlic. Every Garlic error has a **kind**.
+Kinds form a hierarchy, and that hierarchy maps errors to HTTP status codes.
 
-### Kind Hierarchy
+That means handlers can return errors instead of choosing status codes by hand.
+The `rest` package logs the error, serializes it to JSON, and writes the right
+response. User errors are returned to clients. System errors are sanitized so
+internal details stay out of the API response.
 
-Kinds form a three-tier hierarchy, distinguished by a code prefix:
+### Kind hierarchy
 
-- **Primitive kinds (`P`)**: the abstract roots of the hierarchy.
-- **Secondary kinds (`S`)**: one per standard HTTP status, named
-  `HTTP<status>Error` with code `S<status>` (e.g. `HTTP404Error`, `S00404`).
-- **Tertiary kinds (`C`)**: framework-specific errors that descend from the
-  primitive and secondary kinds. Each garlic package owns and registers its own
-  domain-specific tertiary kinds.
+Kinds use three levels:
 
-```
+- **Primitive kinds (`P`)** are the root categories.
+- **Secondary kinds (`S`)** map to standard HTTP status codes. They are named
+  `HTTP<status>Error`, such as `HTTP404Error`, with codes like `S00404`.
+- **Tertiary kinds (`C`)** are framework or application-specific kinds. Garlic
+  packages register their own tertiary kinds under the right parent.
+
+```text
 KindError (P00000)
 ├── KindUserError (P00001, 400)
 │   └── HTTP4xxError (S004xx)            // one per 4xx status
@@ -171,27 +168,25 @@ KindError (P00000)
     └── HTTP3xxError / HTTP5xxError (S00xxx)  // one per non-4xx status
 ```
 
-The `errors` package defines only the primitive, secondary, and generic tertiary
-kinds above. Domain packages register their own: `validator` adds
-`ValidationError` (under `KindInvalidRequestError`), `tracing` adds
-`ContextError` / `ContextValueNotFoundError` (under `KindSystemError`), and
-`database` adds `DatabaseRecordNotFoundError` (under `KindNotFoundError`) and
-`DatabaseTransactionError` (under the 500 secondary).
+The `errors` package owns the primitive kinds, the HTTP secondary kinds, and a
+small set of generic tertiary kinds. Domain packages add their own. For example,
+`validator` registers `ValidationError`, `tracing` registers context-related
+errors, and `database` registers record-not-found and transaction errors.
 
-`errors.IsKind(err, KindUserError)` is true for any client (4xx) error and gates
-what crosses the wire: user errors are exposed in full, while system errors are
-sanitized by `ErrorT.PublicDTO` to their code, name, and static description.
+Use `errors.IsKind(err, errors.KindUserError)` to match any client-side error.
+User errors are exposed in full. System errors are reduced by `ErrorT.PublicDTO`
+to their code, name, and static description.
 
-`errors.KindForStatus(status)` returns the secondary kind for any HTTP status. At
-init, garlic registers a secondary kind for every standard HTTP status; 4xx
-statuses are classified under `KindUserError` and everything else under
-`KindSystemError`. A non-standard status falls back to its class base. The `P`,
-`S`, and `C` code prefixes are reserved by garlic; custom kinds should use a
-different prefix (see below).
+`errors.KindForStatus(status)` returns the secondary kind for a status code.
+Garlic registers one for every standard HTTP status during initialization. A
+non-standard status falls back to its status class. The `P`, `S`, and `C` code
+prefixes are reserved by Garlic, so custom kinds should use another prefix.
 
-### Custom Error Kinds
+### Custom error kinds
 
-Define domain-specific kinds by setting a parent in the hierarchy. Register them in an `init()` function and use a blank import (`_ "myapp/errors"`) in `main.go` to ensure registration:
+Define application-specific kinds by setting a parent in the hierarchy. Register
+them in an `init()` function, then add a blank import in `main.go` so
+registration always runs.
 
 ```go
 // myapp/errors/errors.go
@@ -216,15 +211,17 @@ func init() {
 }
 ```
 
-Other packages retrieve registered kinds by name:
+Other packages can fetch registered kinds by name:
 
 ```go
 var KindPaymentDeclinedError = errors.Get("PaymentDeclinedError")
 ```
 
-### Error Propagation
+### Error propagation
 
-The typical pattern is: handlers call services, services call repositories, and each layer wraps errors with `Propagate` as they bubble up. The original error kind is preserved through the chain.
+Wrap errors with `errors.Propagate` as they move up the stack. Garlic keeps the
+original kind, so a repository `KindNotFoundError` still becomes a `404` when it
+reaches the HTTP handler.
 
 ```go
 // Repository layer
@@ -234,6 +231,7 @@ func (r *UserRepo) FindByID(ctx context.Context, id uuid.UUID) (*User, error) {
     if err != nil {
         return nil, errors.Propagate(err, "failed to read user from database")
     }
+
     return &user, nil
 }
 
@@ -243,21 +241,20 @@ func (s *UserService) Get(ctx context.Context, id uuid.UUID) (*User, error) {
     if err != nil {
         return nil, errors.Propagate(err, "failed to get user")
     }
+
     return user, nil
 }
 
-// Handler layer -- errors are returned, never written directly
+// Handler layer: return errors, do not write failure responses directly.
 func (api *UserAPI) Read(w http.ResponseWriter, r *http.Request) error {
     id, err := request.ParseResourceUUID(r, "user_id")
     if err != nil {
-        return err // KindInvalidRequestError -> 400
+        return err
     }
 
     user, err := api.service.Get(r.Context(), id)
     if err != nil {
         return errors.Propagate(err, "failed to read user")
-        // if original was KindNotFoundError -> 404
-        // if original was KindSystemError -> 500 (sanitized)
     }
 
     rest.WriteResponse(http.StatusOK, user).Must(w)
@@ -265,9 +262,11 @@ func (api *UserAPI) Read(w http.ResponseWriter, r *http.Request) error {
 }
 ```
 
-### Error Context
+### Error context
 
-Build an error context once at the beginning of a service method and reuse it for both structured logging and error wrapping. Context fields are included in logs but never exposed to API consumers.
+Build an error context once at the start of a service method. Reuse it for
+structured logs and error propagation. Context fields appear in logs, but they
+are never returned to API clients.
 
 ```go
 func (s *OrderService) Create(ctx context.Context, form OrderForm) (*Order, error) {
@@ -276,9 +275,9 @@ func (s *OrderService) Create(ctx context.Context, form OrderForm) (*Order, erro
         errors.Field("product_id", form.ProductID),
         errors.Field("quantity", form.Quantity),
     )
-    l := logging.GetLoggerFromContext(ctx).With(ectx.Zap())
 
-    l.Info("Creating order")
+    logger := logging.GetLoggerFromContext(ctx).With(ectx.Zap())
+    logger.Info("Creating order")
 
     order, err := s.repo.Create(ctx, form.ToModel())
     if err != nil {
@@ -298,9 +297,11 @@ ectx := errors.Context(
 // logs as: "sk****f456"
 ```
 
-### Error Templates
+### Error templates
 
-Templates define reusable error factories with a predefined kind, message, and options. Use `New` to create a fresh error or `Propagate` to wrap an existing one:
+Templates are reusable error factories. They define the kind, message, and
+options once. Use `New` to create a fresh error or `Propagate` to wrap an
+existing one.
 
 ```go
 var notFoundTemplate = errors.Template(
@@ -314,7 +315,6 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Resource, error) {
 
     resource, err := s.repo.FindByID(ctx, id)
     if err != nil {
-        // Wrap an existing error with template kind and message
         return nil, notFoundTemplate.Propagate(err, ectx)
     }
 
@@ -322,17 +322,18 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Resource, error) {
 }
 ```
 
-### Inspecting Errors
+### Inspecting errors
 
-`IsKind` walks the entire error chain and traverses the kind hierarchy, so checking for a parent kind matches any of its children:
+`IsKind` walks the whole error chain and follows the kind hierarchy. Checking a
+parent kind also matches its children.
 
 ```go
 if errors.IsKind(err, errors.KindUserError) {
-    // matches ValidationError, NotFoundError, AuthError, ForbiddenError, etc.
+    // Matches validation, not-found, auth, forbidden, and other user errors.
 }
 ```
 
-`AsKind` retrieves the first matching error in the chain for inspection:
+`AsKind` returns the first matching Garlic error in the chain.
 
 ```go
 if e, ok := errors.AsKind(err, errors.KindNotFoundError); ok {
@@ -340,17 +341,18 @@ if e, ok := errors.AsKind(err, errors.KindNotFoundError); ok {
 }
 ```
 
-### Structured Logging
+### Structured logging
 
-`errors.Zap(err)` produces a `zap.Field` that includes the full error context, troubleshooting data, and stack traces:
+`errors.Zap(err)` returns a `zap.Field` with the error context, troubleshooting
+data, and stack trace.
 
 ```go
-l.Error("Failed to process payment", errors.Zap(err))
+logger.Error("Failed to process payment", errors.Zap(err))
 ```
 
-### JSON Serialization
+### JSON serialization
 
-Errors convert to JSON DTOs for API responses. System errors are sanitized automatically:
+Errors convert to response DTOs. System errors are sanitized automatically.
 
 ```go
 dto := err.ErrorDTO()
@@ -364,37 +366,36 @@ dto := err.ErrorDTO()
 
 ## Middleware
 
-The `middleware` package provides HTTP middleware compatible with Chi's `Use` method.
-
-### Available Middleware
+The `middleware` package provides Chi-compatible middleware.
 
 | Middleware | Purpose |
 |------------|---------|
-| `ContextCancel` | Creates a cancellable child context for each request, ensuring resource cleanup |
-| `Logging` | Injects a structured Zap logger into the request context and logs method, URL, status code, response size, and duration |
-| `Tracing` | Generates a UUID request ID, sets `X-Request-ID` in the response, and stores it in context |
-| `PropagateTracing` | Reads `X-Request-ID` and `X-Session-ID` from incoming headers for downstream services |
-| `MetricsMonitor` | Records OpenTelemetry HTTP metrics: `http.server.requests` (counter), `http.server.active_requests` (up/down counter), `http.server.request.duration` (histogram) |
+| `ContextCancel` | Creates a cancellable child context for each request |
+| `Logging` | Adds a Zap logger to the request context and logs method, URL, status, size, and duration |
+| `Tracing` | Generates a request ID, sets `X-Request-ID`, and stores it in context |
+| `PropagateTracing` | Reads `X-Request-ID` and `X-Session-ID` from incoming headers |
+| `MetricsMonitor` | Records OpenTelemetry request count, active request count, and duration metrics |
 | `ContentTypeJson` | Sets `Content-Type: application/json` on every response |
-| `Cors` | Sets CORS headers from a config struct and handles `OPTIONS` preflight requests |
+| `Cors` | Sets CORS headers and handles `OPTIONS` preflight requests |
 
-The `/health` endpoint is automatically excluded from logging and metrics.
+The `/health` endpoint is excluded from logging and metrics by default.
 
-### Middleware Stack Patterns
+### Middleware stack patterns
 
-Apply middleware per route group to control which routes get logging, auth, or metrics:
+Apply middleware per route group. This keeps public routes simple and gives API
+routes the full observability stack.
 
 ```go
 server := rest.GetServer("api")
 r := server.Router()
 
-// Public routes: health checks, docs
+// Public routes: health checks and docs.
 r.Group(func(r chi.Router) {
     r.Use(middleware.ContentTypeJson)
     rest.RegisterApp(r, healthAPI)
 })
 
-// API routes: full observability stack
+// API routes: logging, tracing, metrics, and JSON responses.
 r.Group(func(r chi.Router) {
     r.Use(
         middleware.Logging,
@@ -402,14 +403,16 @@ r.Group(func(r chi.Router) {
         middleware.MetricsMonitor,
         middleware.ContentTypeJson,
     )
+
     rest.RegisterApp(r, usersAPI)
     rest.RegisterApp(r, ordersAPI)
 })
 ```
 
-Use `Tracing` for edge services that generate request IDs, and `PropagateTracing` for downstream services that receive them via headers.
+Use `Tracing` at the edge of the system to create request IDs. Use
+`PropagateTracing` in downstream services that receive IDs through headers.
 
-### CORS Configuration
+### CORS
 
 ```go
 cfg := &middleware.Config{
@@ -424,74 +427,71 @@ cfg := &middleware.Config{
 r.Use(middleware.Cors(cfg))
 ```
 
-## Metrics and Observability
+## Metrics and observability
 
-`middleware.MetricsMonitor` records HTTP metrics through OpenTelemetry, using the
-global `MeterProvider`. By default that provider is a no-op, so nothing is
-exported until an application installs one. The `observability` package is the
-recommended setup: it pushes metrics to an OpenTelemetry collector over
-OTLP/gRPC.
+`middleware.MetricsMonitor` records HTTP metrics through the global OpenTelemetry
+`MeterProvider`. The default provider is a no-op, so nothing is exported until
+the application installs one.
+
+The easiest setup is `observability.Init`, which exports metrics to an
+OpenTelemetry collector over OTLP/gRPC.
 
 ```go
-// Install once at startup, before serving traffic.
 observability.Init(&observability.Config{ServiceName: "my-api"})
 
-// Flush the last interval of metrics on graceful shutdown. WithOnShutdown
-// passes a context carrying the server's shutdown deadline.
 server := rest.GetServer("api", rest.WithOnShutdown(func(ctx context.Context) {
     _ = observability.Shutdown(ctx)
 }))
 ```
 
-The exporter reads the standard OpenTelemetry environment variables, so a
-collector-sidecar deployment needs no code configuration beyond the service
-name:
+The exporter reads the standard OpenTelemetry environment variables. In a
+collector-sidecar deployment, the service name may be the only code-level
+setting you need.
 
 ```sh
 OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
 ```
 
 Non-zero `observability.Config` fields (`Endpoint`, `Insecure`, `Interval`)
-override the corresponding environment variable when you prefer explicit
-configuration. Applications that already run their own `MeterProvider` can skip
-`observability.Init` entirely and install it via `otel.SetMeterProvider`; the
-middleware records into whatever provider is installed.
+override their matching environment variables. If your application already
+installs its own `MeterProvider`, skip `observability.Init` and call
+`otel.SetMeterProvider` yourself. Garlic records into whichever provider is
+installed.
 
 ### Instruments
 
-The middleware records three instruments under the meter
-`github.com/luanguimaraesla/garlic`, using the OpenTelemetry HTTP
-semantic-convention attribute keys:
+The middleware records metrics under the meter
+`github.com/luanguimaraesla/garlic` and uses OpenTelemetry HTTP semantic
+convention attributes.
 
 | Instrument | Type | Attributes |
 |------------|------|------------|
 | `http.server.requests` | counter | `http.request.method`, `http.route`, `http.response.status_code` |
 | `http.server.active_requests` | up/down counter | `http.request.method`, `http.route` |
-| `http.server.request.duration` | histogram (seconds) | `http.request.method`, `http.route`, `http.response.status_code` |
+| `http.server.request.duration` | histogram in seconds | `http.request.method`, `http.route`, `http.response.status_code` |
 
-`http.server.active_requests` and `http.server.request.duration` are HTTP
-semantic-convention metrics; `http.server.requests` is a garlic-specific request
-counter (its total is also derivable from the histogram's count).
+`http.server.active_requests` and `http.server.request.duration` are standard
+semantic-convention metrics. `http.server.requests` is Garlic's request counter;
+its total can also be derived from the histogram count.
 
 ### Migrating from the Prometheus backend
 
-This replaces the previous `prometheus/client_golang` backend and is a breaking
-change:
+Garlic no longer uses `prometheus/client_golang` directly. This is a breaking
+change.
 
-- The `monitoring.TrafficMetric`, `monitoring.ActiveRequests`, and
-  `monitoring.LatencyMetric` globals are removed, along with their automatic
-  registration in the default registry.
-- There is no `/metrics` endpoint. Metrics are pushed to an OTLP collector;
-  configure the destination with `OTEL_EXPORTER_OTLP_ENDPOINT` (or
-  `observability.Config`). Replace any `promhttp.Handler()` route with
-  `observability.Init(...)`.
-- If you still need a Prometheus scrape endpoint, point your collector's
-  Prometheus exporter at the data, or install a Prometheus-exporter
-  `MeterProvider` yourself instead of calling `observability.Init`.
+- `monitoring.TrafficMetric`, `monitoring.ActiveRequests`, and
+  `monitoring.LatencyMetric` were removed.
+- Garlic no longer registers metrics in the default Prometheus registry.
+- Garlic no longer exposes a `/metrics` endpoint. Metrics are pushed to an OTLP
+  collector instead.
+- Replace `promhttp.Handler()` routes with `observability.Init(...)`, or install
+  your own Prometheus-exporting `MeterProvider` if you still need a scrape
+  endpoint.
 
-## Routes and Handlers
+## Routes and handlers
 
-Handlers return `error` instead of writing failure responses directly. The `rest` package catches returned errors, logs them, and responds with the appropriate HTTP status code based on the error kind.
+Garlic handlers return `error`. They write successful responses directly, but
+they return failures and let `rest` handle logging and status codes.
 
 ```go
 type OrderAPI struct {
@@ -524,7 +524,7 @@ func (api *OrderAPI) Create(w http.ResponseWriter, r *http.Request) error {
 }
 ```
 
-## Request Parsing
+## Request parsing
 
 ```go
 // Path parameters
@@ -537,29 +537,31 @@ limit, start := request.ParseParamPagination(r)
 active, err := request.ParseOptionalParamBool(r, "active")
 name, err := request.ParseParamString(r, "name")
 
-// Body decoding + validation + model conversion
+// Body decoding, validation, and model conversion
 var form CreateOrderForm
 model, err := request.ParseForm[Order](r, &form)
 ```
 
-## Database Transactions
+## Database transactions
 
 ```go
 storer := database.NewStorer(db)
 
 err := storer.Transaction(ctx, func(txCtx context.Context) error {
     if err := db.Create(txCtx, insertQuery, &order); err != nil {
-        return err // triggers automatic rollback
+        return err // rolls back
     }
+
     return db.Update(txCtx, updateInventoryQuery, order.ProductID, order.Quantity)
-    // committed on success
+    // commits on success
 })
 ```
 
-## Custom Validation
+## Custom validation
+
+Register custom validators at startup, then use them in struct tags.
 
 ```go
-// Register custom validators at startup
 validator.Init(
     validator.NewValidation("is_git_url", func(fl validator.Field) bool {
         value := fl.Field().String()
@@ -567,19 +569,18 @@ validator.Init(
     }),
 )
 
-// Use in struct tags
 type CreateRepoForm struct {
     URL    string `json:"url" validate:"required,is_git_url"`
     Branch string `json:"branch" validate:"required"`
 }
 ```
 
-## Inter-Service Communication
+## Inter-service communication
 
-The `httpclient` package is a pooled HTTP client built on a client-as-default /
-request-as-fork model. Build one client per upstream at startup and reuse it;
-`conn.R(ctx)` forks a per-call request that inherits the defaults. It propagates
-`X-Request-ID` and `X-Session-ID` from the context for distributed tracing.
+The `httpclient` package gives you a pooled HTTP client. Create one client per
+upstream service at startup, then fork per-call requests with `conn.R(ctx)`. Each
+request inherits the client defaults and propagates `X-Request-ID` and
+`X-Session-ID` from the context.
 
 ```go
 conn, err := httpclient.New(&httpclient.Config{
@@ -594,47 +595,49 @@ resp, err := conn.R(ctx).
     Get("/v1/orders/" + orderID)
 ```
 
-A non-2xx response returns a typed `*httpclient.ResponseError` that preserves the
-HTTP status, the `Retry-After` hint, and selected headers, and is panic-free for
-any body shape. It still matches `errors.IsKind`, and `errors.As` exposes the
-HTTP detail:
+Non-2xx responses return a typed `*httpclient.ResponseError`. It preserves the
+HTTP status, the `Retry-After` hint, and selected headers. It is safe for any
+response body shape, still matches `errors.IsKind`, and can be inspected with
+the standard library's `errors.As`.
 
 ```go
-var re *httpclient.ResponseError
-if errors.As(err, &re) && re.StatusCode() == http.StatusTooManyRequests {
-    if d, ok := re.RetryAfter(); ok {
-        time.Sleep(d)
+var responseErr *httpclient.ResponseError
+if errors.As(err, &responseErr) && responseErr.StatusCode() == http.StatusTooManyRequests {
+    if delay, ok := responseErr.RetryAfter(); ok {
+        time.Sleep(delay)
     }
 }
 ```
 
-Streaming uploads with an explicit `Content-Length`, raw streaming downloads
-(`SetDoNotParseResponse`), pluggable auth via a `TokenSource`, idempotency-aware
-retry (only `GET`/`HEAD`/`OPTIONS`/`PUT`/`DELETE` by default; `EnableRetry` opts a
-`POST` in), a custom transport or `http.RoundTripper`, and before/after
-middleware hooks are all supported. Compose OpenTelemetry by wrapping
-`Config.Transport`; the connector does not import `otelhttp`.
+The client also supports streaming uploads with explicit `Content-Length`, raw
+streaming downloads through `SetDoNotParseResponse`, pluggable auth through a
+`TokenSource`, custom transports, `http.RoundTripper`, before/after hooks, and
+idempotency-aware retry. Retry is enabled for `GET`, `HEAD`, `OPTIONS`, `PUT`,
+and `DELETE` by default. Use `EnableRetry` to opt a `POST` request in.
 
-Downstream services that hold an `httpclient.Requester` can inject
-`httpclient.NewRequesterMock()` in `//go:build unit` tests instead of standing up
-an HTTP server.
+To add OpenTelemetry, wrap `Config.Transport`. The connector does not import
+`otelhttp` directly.
 
-> **Migration from the old `Connector` API.** `NewConnector`, `Connector.Request`,
-> the `Request{Method, URI, Data, QueryParams}` struct, and the package-level
-> `Get`/`Post`/`Put`/`Patch`/`Delete` functions were removed. Replace
-> `conn.Request(ctx, &Request{Method: http.MethodGet, URI: path}, &out)` with
-> `conn.R(ctx).SetResult(&out).Get(path)`, and construct the client with
-> `httpclient.New(&Config{BaseURL: ...})` (the old `Config.URL` field is now
-> `Config.BaseURL`, still mapped from the `url` config key). Behavior also
-> improves: the request context now reaches the transport (deadlines and
-> cancellation take effect) and retry is gated to idempotent methods.
+In unit tests, inject `httpclient.NewRequesterMock()` anywhere your code depends
+on `httpclient.Requester`. You do not need to start a test HTTP server.
 
-## Third-Party Logger Interfaces
+> **Migration from the old `Connector` API:** `NewConnector`,
+> `Connector.Request`, the `Request{Method, URI, Data, QueryParams}` struct, and
+> the package-level `Get`/`Post`/`Put`/`Patch`/`Delete` functions were removed.
+> Replace `conn.Request(ctx, &Request{Method: http.MethodGet, URI: path}, &out)`
+> with `conn.R(ctx).SetResult(&out).Get(path)`. Construct the client with
+> `httpclient.New(&Config{BaseURL: ...})`. The old `Config.URL` field is now
+> `Config.BaseURL`, still mapped from the `url` config key. Request contexts now
+> reach the transport, so deadlines and cancellation work as expected. Retry is
+> also limited to idempotent methods unless you opt in.
 
-Several Go libraries (Temporal SDK, go-kit log, log15) expect a keyvals-style
-logger: `Debug/Info/Warn/Error(msg string, kv ...any)` plus `With(kv ...any)`.
-The `logging/keyvals` package adapts a garlic logger to that shape so consumers
-don't have to write the same shim in every project.
+## Third-party logger interfaces
+
+Some Go libraries expect a keyvals-style logger with methods like
+`Debug/Info/Warn/Error(msg string, kv ...any)` and `With(kv ...any)`. Temporal
+SDK, go-kit log, and log15 all use this shape. The `logging/keyvals` package
+adapts a Garlic logger to that interface so each service does not need its own
+shim.
 
 ```go
 import (
@@ -650,39 +653,36 @@ c, err := client.Dial(client.Options{
 })
 ```
 
-The package is named after the interface *shape*, not any single library,
-because the same shape shows up in multiple SDKs. The adapter is structurally
-compatible with all of them: garlic does not import the target SDKs, so adding
-`logging/keyvals` to your project does not pull Temporal (or any other library)
-into your dependency graph. The compile-time check that the adapter satisfies
-each interface happens at your call site, when you pass the logger to the
-target library.
+The package is named after the interface shape, not after a specific library.
+Garlic does not import those target SDKs, so adding `logging/keyvals` does not
+pull Temporal or any other SDK into your dependency graph. The compile-time
+interface check happens in your project when you pass the adapter to the target
+library.
 
-`NewLogger(nil)` falls back to `logging.Global()`. `With` returns a new
-adapter so chained calls keep satisfying the interface.
+`NewLogger(nil)` falls back to `logging.Global()`. `With` returns a new adapter,
+so chained calls keep satisfying the same interface.
 
-## AI Agent Guidance
+## AI agent guidance
 
-Garlic ships a [Claude Code](https://claude.ai/code) skill that teaches AI
-agents the framework's conventions (error propagation, context-based logging,
-middleware ordering, etc.). Projects that depend on garlic can install it with
-[skills](https://github.com/vercel-labs/skills):
+Garlic ships a [Claude Code](https://claude.ai/code) skill that teaches agents
+the framework conventions: error propagation, context-based logging, middleware
+ordering, and the rest of Garlic's patterns. Projects that depend on Garlic can
+install it with [skills](https://github.com/vercel-labs/skills):
 
 ```bash
 npx skills add luanguimaraesla/garlic -s garlic-conventions
 ```
 
-The skill activates automatically when Claude Code detects garlic imports in
-the project. Run `npx skills check` after updating the garlic dependency to
-pick up any changes.
+The skill activates when Claude Code detects Garlic imports in a project. Run
+`npx skills check` after updating Garlic so agents pick up the latest guidance.
 
 ## Development
 
 ```bash
-make test                        # Run all unit tests with coverage
-make GOTESTRUN=TestName test     # Run a specific test by name
+make test                        # Run unit tests with coverage
+make GOTESTRUN=TestName test     # Run a specific unit test
 make lint                        # Run golangci-lint
-make fix                         # Format code (goimports) + tidy/vendor modules
-make cover                       # Show text coverage report
-make cover/html                  # Open HTML coverage report
+make fix                         # Run goimports, go mod tidy, and vendoring
+make cover                       # Show the text coverage report
+make cover/html                  # Open the HTML coverage report
 ```
