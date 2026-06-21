@@ -21,7 +21,7 @@ func GetRequestIdFromContext(ctx context.Context) (uuid.UUID, error) {
 	val := ctx.Value(RequestIdKey)
 	if val == nil {
 		return uuid.Nil, errors.New(
-			KindContextValueNotFoundError,
+			errors.KindContextValueNotFoundError,
 			"request id is not set in this context",
 		)
 	}
@@ -29,7 +29,7 @@ func GetRequestIdFromContext(ctx context.Context) (uuid.UUID, error) {
 	requestId, ok := val.(uuid.UUID)
 	if !ok {
 		return uuid.Nil, errors.New(
-			KindContextError,
+			errors.KindContextError,
 			"invalid request id found in context",
 			errors.Context(
 				errors.Field("invalid_request_id", val),
@@ -53,7 +53,7 @@ func GetSessionIdFromContext(ctx context.Context) (string, error) {
 	val := ctx.Value(SessionIdKey)
 	if val == nil {
 		return "", errors.New(
-			KindContextValueNotFoundError,
+			errors.KindContextValueNotFoundError,
 			"session id is not set in this context",
 		)
 	}
@@ -61,7 +61,7 @@ func GetSessionIdFromContext(ctx context.Context) (string, error) {
 	sessionId, ok := val.(string)
 	if !ok {
 		return "", errors.New(
-			KindContextError,
+			errors.KindContextError,
 			"invalid session id found in context",
 			errors.Context(
 				errors.Field("invalid_session_id", val),

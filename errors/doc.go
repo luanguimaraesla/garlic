@@ -25,12 +25,12 @@
 //	    └── HTTP3xxError / HTTP5xxError (S00xxx)   // one per non-4xx status
 //
 // The errors package defines only the primitive, secondary, and generic tertiary
-// kinds above. Each garlic package owns and registers its own domain-specific
-// tertiary kinds the same way: the validator package adds ValidationError (under
-// KindInvalidRequestError), the tracing package adds ContextError and
-// ContextValueNotFoundError (under KindSystemError), and the database package
-// adds DatabaseRecordNotFoundError (under KindNotFoundError) and
-// DatabaseTransactionError (under the 500 secondary).
+// kinds above, plus shared tertiary kinds such as ContextError and
+// ContextValueNotFoundError (under KindSystemError). Each garlic package owns
+// and registers its own domain-specific tertiary kinds the same way: the
+// validator package adds ValidationError (under KindInvalidRequestError), and
+// the database package adds DatabaseRecordNotFoundError (under KindNotFoundError)
+// and DatabaseTransactionError (under the 500 secondary).
 //
 // Each kind has a unique code, a human-readable name, an optional HTTP status
 // code, and an optional parent. The [Kind.StatusCode] method traverses the

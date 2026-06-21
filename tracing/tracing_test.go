@@ -7,6 +7,8 @@ import (
 	"context"
 	"testing"
 
+	garlicerrors "github.com/luanguimaraesla/garlic/errors"
+
 	"github.com/google/uuid"
 )
 
@@ -29,6 +31,10 @@ func TestGetRequestIdFromContext_missing(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing request id, got nil")
 	}
+
+	if !garlicerrors.IsKind(err, garlicerrors.KindContextValueNotFoundError) {
+		t.Fatalf("expected context value not found error, got %v", err)
+	}
 }
 
 func TestGetRequestIdFromContext_wrongType(t *testing.T) {
@@ -37,6 +43,10 @@ func TestGetRequestIdFromContext_wrongType(t *testing.T) {
 	_, err := GetRequestIdFromContext(ctx)
 	if err == nil {
 		t.Fatal("expected error for wrong type, got nil")
+	}
+
+	if !garlicerrors.IsKind(err, garlicerrors.KindContextError) {
+		t.Fatalf("expected context error, got %v", err)
 	}
 }
 
@@ -59,6 +69,10 @@ func TestGetSessionIdFromContext_missing(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing session id, got nil")
 	}
+
+	if !garlicerrors.IsKind(err, garlicerrors.KindContextValueNotFoundError) {
+		t.Fatalf("expected context value not found error, got %v", err)
+	}
 }
 
 func TestGetSessionIdFromContext_wrongType(t *testing.T) {
@@ -67,6 +81,10 @@ func TestGetSessionIdFromContext_wrongType(t *testing.T) {
 	_, err := GetSessionIdFromContext(ctx)
 	if err == nil {
 		t.Fatal("expected error for wrong type, got nil")
+	}
+
+	if !garlicerrors.IsKind(err, garlicerrors.KindContextError) {
+		t.Fatalf("expected context error, got %v", err)
 	}
 }
 

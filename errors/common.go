@@ -67,6 +67,20 @@ var (
 		Description: "The requested resource was not found in our system or external services.",
 		Parent:      httpKinds[http.StatusNotFound],
 	}
+
+	KindContextError = &Kind{
+		Name:        "ContextError",
+		Code:        "C00006",
+		Description: "An error occurred due to a problem with the context.",
+		Parent:      KindSystemError,
+	}
+
+	KindContextValueNotFoundError = &Kind{
+		Name:        "ContextValueNotFoundError",
+		Code:        "C00007",
+		Description: "A required value was not found in the context.",
+		Parent:      KindContextError,
+	}
 )
 
 func init() {
@@ -86,5 +100,7 @@ func init() {
 		KindAuthError,
 		KindForbiddenError,
 		KindNotFoundError,
+		KindContextError,
+		KindContextValueNotFoundError,
 	)
 }
