@@ -18,9 +18,6 @@ func TestNew_nilConfigUsesDefaults(t *testing.T) {
 	if c.config.BaseURL != "http://localhost" {
 		t.Errorf("BaseURL = %q", c.config.BaseURL)
 	}
-	if c.messageField != "message" {
-		t.Errorf("messageField = %q, want message", c.messageField)
-	}
 }
 
 func TestNew_badBaseURL(t *testing.T) {

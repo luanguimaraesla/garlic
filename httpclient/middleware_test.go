@@ -67,7 +67,7 @@ func TestMiddleware_afterHookSeesResponse(t *testing.T) {
 	var status int
 	_, err := c.R(context.Background()).
 		OnAfterResponse(func(_ *Client, _ *Request, resp *Response) error {
-			status = resp.StatusCode()
+			status = resp.StatusCode
 			return nil
 		}).
 		Get("/x")

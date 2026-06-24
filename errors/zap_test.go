@@ -8,8 +8,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// wrappedErr embeds an *ErrorT behind a different concrete type, mirroring how
-// httpclient.ResponseError wraps a garlic error.
+// wrappedErr embeds an *ErrorT behind a different concrete type.
 type wrappedErr struct {
 	*ErrorT
 }

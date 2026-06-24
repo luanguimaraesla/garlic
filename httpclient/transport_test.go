@@ -24,9 +24,11 @@ func TestTransport_connectionReused(t *testing.T) {
 			GotConn: func(info httptrace.GotConnInfo) { reused = info.Reused },
 		}
 		ctx := httptrace.WithClientTrace(context.Background(), trace)
-		if _, err := c.R(ctx).Get("/x"); err != nil {
+		resp, err := c.R(ctx).Get("/x")
+		if err != nil {
 			t.Fatal(err)
 		}
+		_ = resp.Close()
 		return reused
 	}
 
@@ -64,12 +66,12 @@ func TestTransport_checkRedirectHonored(t *testing.T) {
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	})
 
-	_, err := c.R(context.Background()).Get("/redirect")
-	var re *ResponseError
-	if !errors.As(err, &re) {
-		t.Fatalf("expected a ResponseError, got %v", err)
+	resp, err := c.R(context.Background()).Get("/redirect")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
 	}
-	if re.StatusCode() != http.StatusFound {
-		t.Errorf("status = %d, want 302 (redirect not followed)", re.StatusCode())
+	defer func() { _ = resp.Close() }()
+	if resp.StatusCode != http.StatusFound {
+		t.Errorf("status = %d, want 302 (redirect not followed)", resp.StatusCode)
 	}
 }

@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	"github.com/luanguimaraesla/garlic/errors"
 )
 
 func TestRequest_settersAndResponseGetters(t *testing.T) {
@@ -37,6 +35,7 @@ func TestRequest_settersAndResponseGetters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = resp.Close() }()
 
 	if captured.Header.Get("X-A") != "1" {
 		t.Error("SetHeaders not applied")
@@ -51,20 +50,21 @@ func TestRequest_settersAndResponseGetters(t *testing.T) {
 		t.Errorf("body = %s", body)
 	}
 
-	if resp.Status() == "" {
+	if resp.Status == "" {
 		t.Error("Status empty")
 	}
-	if resp.Header() == nil {
+	if resp.Header == nil {
 		t.Error("Header nil")
 	}
-	if resp.RawResponse() == nil {
-		t.Error("RawResponse nil")
+	if resp.Response == nil {
+		t.Error("Response nil")
 	}
 	if resp.IsError() {
 		t.Error("200 should not be IsError")
 	}
-	if !strings.Contains(resp.String(), "ok") {
-		t.Errorf("String = %q", resp.String())
+	respBody, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(respBody), "ok") {
+		t.Errorf("body = %q", respBody)
 	}
 }
 
@@ -150,21 +150,6 @@ func TestBuildURL(t *testing.T) {
 	}
 }
 
-func TestResponseError_bodyAccessor(t *testing.T) {
-	c := newClientWithTransport(t, RoundTripperFunc(func(*http.Request) (*http.Response, error) {
-		return textResponse(http.StatusInternalServerError, "boom-body", nil), nil
-	}), &Config{Retry: RetryConfig{}})
-
-	_, err := c.R(context.Background()).Get("/x")
-	var re *ResponseError
-	if !errors.As(err, &re) {
-		t.Fatal("expected a ResponseError")
-	}
-	if re.Body() != "boom-body" {
-		t.Errorf("Body() = %q", re.Body())
-	}
-}
-
 func TestRequesterMock_withBodyAndHeader(t *testing.T) {
 	mock := NewRequesterMock().WithStatus(http.StatusOK).WithBody([]byte("hello")).WithHeader("X-Custom", "yes")
 
@@ -172,10 +157,13 @@ func TestRequesterMock_withBodyAndHeader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.String() != "hello" {
-		t.Errorf("body = %q", resp.String())
+	defer func() { _ = resp.Close() }()
+
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "hello" {
+		t.Errorf("body = %q", body)
 	}
-	if resp.Header().Get("X-Custom") != "yes" {
-		t.Errorf("header = %q", resp.Header().Get("X-Custom"))
+	if resp.Header.Get("X-Custom") != "yes" {
+		t.Errorf("header = %q", resp.Header.Get("X-Custom"))
 	}
 }

@@ -3,7 +3,6 @@ package httpclient_test
 import (
 	"context"
 	"io"
-	"net/http"
 	"os"
 	"time"
 
@@ -63,15 +62,14 @@ func ExampleClient_streaming() {
 	}
 	defer func() { _ = resp.Close() }()
 
-	_ = resp.Header().Get("ETag")
+	_ = resp.Header.Get("ETag")
 }
 
-// ExampleClient_rawDownload streams a response body straight to a file without
-// buffering or JSON decoding.
+// ExampleClient_rawDownload streams a response body straight to a file.
 func ExampleClient_rawDownload() {
 	conn, _ := httpclient.New(&httpclient.Config{BaseURL: "http://localhost:7233"})
 
-	resp, err := conn.R(context.Background()).SetDoNotParseResponse(true).Get("/files/abc/data")
+	resp, err := conn.R(context.Background()).Get("/files/abc/data")
 	if err != nil {
 		return
 	}
@@ -79,30 +77,24 @@ func ExampleClient_rawDownload() {
 
 	dst, _ := os.Create("/tmp/out")
 	defer func() { _ = dst.Close() }()
-	_, _ = io.Copy(dst, resp.Body())
+	_, _ = io.Copy(dst, resp.Body)
 }
 
-// ExampleClient_typedError inspects the typed error: the HTTP status, the
-// Retry-After hint, and the garlic kind all survive.
+// ExampleClient_typedError decodes a garlic error from a non-2xx response.
 func ExampleClient_typedError() {
 	conn, _ := httpclient.New(&httpclient.Config{BaseURL: "https://api.example.com"})
 
-	_, err := conn.R(context.Background()).Get("/users/999")
-
-	var re *httpclient.ResponseError
-	if errors.As(err, &re) {
-		switch re.StatusCode() {
-		case http.StatusNotFound:
-			// handle 404
-		case http.StatusTooManyRequests:
-			if d, ok := re.RetryAfter(); ok {
-				time.Sleep(d)
-			}
-		}
+	resp, err := conn.R(context.Background()).Get("/users/999")
+	if err != nil {
+		return
 	}
+	defer func() { _ = resp.Close() }()
 
-	if errors.IsKind(err, errors.KindNotFoundError) {
-		// classify by kind, regardless of the wire shape
+	if resp.IsError() {
+		err = resp.DecodeError()
+		if errors.IsKind(err, errors.KindNotFoundError) {
+			// handle 404
+		}
 	}
 }
 

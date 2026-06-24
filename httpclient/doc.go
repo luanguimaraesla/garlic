@@ -45,14 +45,13 @@
 //
 // # Responses
 //
-// The returned [Response] exposes StatusCode, Header, Bytes, Decode, and the raw
-// http.Response. By default the body is read and the connection returns to the
-// pool; SetDoNotParseResponse leaves the body open for streaming downloads (the
-// caller closes it):
+// The returned [Response] embeds the raw http.Response. The body stays open so
+// callers can decode, stream, or inspect it themselves. Close the response when
+// you are done with it:
 //
-//	resp, err := conn.R(ctx).SetDoNotParseResponse(true).Get("/files/" + id + "/data")
+//	resp, err := conn.R(ctx).Get("/files/" + id + "/data")
 //	defer resp.Close()
-//	_, err = io.Copy(dst, resp.Body())
+//	_, err = io.Copy(dst, resp.Body)
 //
 // # Auth
 //
@@ -71,18 +70,19 @@
 //
 // # Errors
 //
-// A non-2xx response yields a [ResponseError] that wraps a garlic error: it is
-// panic-free for any body shape (DTO, {"message":...}, plain text, HTML, empty),
-// preserves the HTTP status, the Retry-After hint, and selected response headers,
-// and classifies via the kind hierarchy so errors.IsKind still works:
+// Send only returns request-building, transport, hook, and decode failures. HTTP
+// statuses are left on [Response] so callers decide how to handle them. When the
+// upstream returns a garlic error DTO, [Response.DecodeError] returns an error
+// that works with errors.IsKind:
 //
-//	var re *httpclient.ResponseError
-//	if errors.As(err, &re) {
-//	    switch re.StatusCode() {
-//	    case http.StatusNotFound: // ...
-//	    case http.StatusTooManyRequests:
-//	        if d, ok := re.RetryAfter(); ok { time.Sleep(d) }
-//	    }
+//	resp, err := conn.R(ctx).Get("/users/" + id)
+//	if err != nil {
+//	    return err
+//	}
+//	defer resp.Close()
+//	if resp.IsError() {
+//	    err = resp.DecodeError()
+//	    if errors.IsKind(err, errors.KindNotFoundError) { /* ... */ }
 //	}
 //
 // # Observability

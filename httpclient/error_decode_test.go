@@ -12,62 +12,63 @@ import (
 	"github.com/luanguimaraesla/garlic/errors"
 )
 
-func TestDecodeErrorBody_dtoKnownCode_faithful(t *testing.T) {
+func TestResponse_DecodeErrorReturnsGarlicError(t *testing.T) {
 	raw, _ := json.Marshal(errors.New(errors.KindNotFoundError, "missing").ErrorDTO())
+	c := newClientWithTransport(t, RoundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return textResponse(http.StatusNotFound, string(raw), nil), nil
+	}), &Config{Retry: RetryConfig{}})
 
-	e := decodeErrorBody(raw, http.StatusNotFound, "message")
-	if !errors.IsKind(e, errors.KindNotFoundError) {
-		t.Error("expected the faithful NotFound kind")
-	}
-	if len(e.Troubleshooting.Context) != 0 {
-		t.Error("a faithful decode must not be marked as a fallback")
-	}
-}
-
-func TestDecodeErrorBody_noPanicMatrix(t *testing.T) {
-	cases := []struct {
-		name   string
-		body   string
-		status int
-		field  string
-		want   string // expected message
-	}{
-		{"dto unknown code", `{"name":"X","error":"weird","kind":"ZZZ999"}`, 503, "message", "weird"},
-		{"message shape", `{"message":"nope"}`, 400, "message", "nope"},
-		{"custom message field", `{"msg":"custom"}`, 400, "msg", "custom"},
-		{"plain text", "just text", 500, "message", "just text"},
-		{"html", "<html>bad gateway</html>", 502, "message", "<html>bad gateway</html>"},
-		{"empty", "", 500, "message", http.StatusText(500)},
+	resp, err := c.R(context.Background()).Get("/x")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			defer func() {
-				if r := recover(); r != nil {
-					t.Errorf("decodeErrorBody panicked: %v", r)
-				}
-			}()
-
-			e := decodeErrorBody([]byte(tc.body), tc.status, tc.field)
-			if e.Error() != tc.want {
-				t.Errorf("message = %q, want %q", e.Error(), tc.want)
-			}
-			if e.Kind().StatusCode() != tc.status {
-				t.Errorf("kind status = %d, want %d", e.Kind().StatusCode(), tc.status)
-			}
-		})
+	gerr := resp.DecodeError()
+	if !errors.IsKind(gerr, errors.KindNotFoundError) {
+		t.Fatalf("decoded error kind = %v, want KindNotFoundError", gerr)
+	}
+	if gerr.Error() != "missing" {
+		t.Errorf("message = %q, want missing", gerr.Error())
 	}
 }
 
-func TestDecodeErrorBody_fallbackMarkStaysInTroubleshooting(t *testing.T) {
-	e := decodeErrorBody([]byte("plain text"), 500, "message")
+func TestResponse_DecodeErrorRejectsUnknownKind(t *testing.T) {
+	c := newClientWithTransport(t, RoundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return textResponse(http.StatusBadGateway, `{"error":"weird","kind":"ZZZ999"}`, nil), nil
+	}), &Config{Retry: RetryConfig{}})
 
-	if len(e.Troubleshooting.Context) == 0 {
-		t.Error("expected a fallback mark in the troubleshooting context")
+	resp, err := c.R(context.Background()).Get("/x")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
 	}
-	dto := e.ErrorDTO()
-	if _, leaked := dto.Details["upstream_decode_fallback"]; leaked {
-		t.Error("the fallback mark must never appear in the serialized DTO")
+
+	gerr := resp.DecodeError()
+	if !errors.IsKind(gerr, KindUnknownResponseError) {
+		t.Fatalf("decoded error kind = %v, want KindUnknownResponseError", gerr)
+	}
+}
+
+func TestResponse_DecodeErrorRejectsNonErrorResponse(t *testing.T) {
+	resp := &Response{Response: textResponse(http.StatusOK, `{}`, nil)}
+
+	gerr := resp.DecodeError()
+	if !errors.IsKind(gerr, KindResponseDecodeError) {
+		t.Fatalf("decoded error kind = %v, want KindResponseDecodeError", gerr)
+	}
+}
+
+func TestRequest_SendDoesNotErrorOnHTTPStatus(t *testing.T) {
+	raw, _ := json.Marshal(errors.New(errors.KindNotFoundError, "missing").ErrorDTO())
+	c := newClientWithTransport(t, RoundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return textResponse(http.StatusNotFound, string(raw), nil), nil
+	}), &Config{Retry: RetryConfig{}})
+
+	resp, err := c.R(context.Background()).Get("/x")
+	if err != nil {
+		t.Fatalf("Get returned error for HTTP status: %v", err)
+	}
+	if !resp.IsError() {
+		t.Fatal("expected response to report an error status")
 	}
 }
 
@@ -87,34 +88,5 @@ func TestParseRetryAfter(t *testing.T) {
 	future := time.Now().Add(10 * time.Second).UTC().Format(http.TimeFormat)
 	if d, ok := parseRetryAfter(future); !ok || d <= 0 {
 		t.Errorf("HTTP-date: got %v, %v", d, ok)
-	}
-}
-
-func TestResponseError_endToEndPreservesStatusRetryAfterHeaders(t *testing.T) {
-	header := http.Header{}
-	header.Set("Retry-After", "7")
-	header.Set("X-Request-Id", "req-9")
-
-	c := newClientWithTransport(t, RoundTripperFunc(func(*http.Request) (*http.Response, error) {
-		return textResponse(http.StatusTooManyRequests, `{"message":"slow down"}`, header), nil
-	}), &Config{Retry: RetryConfig{}})
-
-	_, err := c.R(context.Background()).Get("/x")
-
-	var re *ResponseError
-	if !errors.As(err, &re) {
-		t.Fatalf("expected a ResponseError, got %v", err)
-	}
-	if re.StatusCode() != http.StatusTooManyRequests {
-		t.Errorf("status = %d, want 429", re.StatusCode())
-	}
-	if d, ok := re.RetryAfter(); !ok || d != 7*time.Second {
-		t.Errorf("Retry-After = %v, %v", d, ok)
-	}
-	if re.Header().Get("X-Request-Id") != "req-9" {
-		t.Errorf("preserved header missing: %v", re.Header())
-	}
-	if !errors.IsKind(err, errors.KindUserError) {
-		t.Error("429 should classify as a user-class error")
 	}
 }
