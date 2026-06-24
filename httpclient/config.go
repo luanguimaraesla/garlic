@@ -5,9 +5,8 @@ import (
 	"time"
 )
 
-// Config carries the shared, client-level defaults for a [Client]. Every field
-// has a sensible zero-value fallback applied by [Defaults]; values set on a
-// per-request [Request] override the client-level defaults.
+// Config carries the shared defaults for a [Client]. Per-request setters on
+// [Request] override these values.
 type Config struct {
 	// BaseURL is prepended to every request path. An empty BaseURL means paths
 	// must be absolute URLs.
@@ -22,11 +21,6 @@ type Config struct {
 	// backstop. It is never set on the underlying http.Client, so a per-call
 	// context deadline always takes effect.
 	Timeout time.Duration `mapstructure:"timeout" yaml:"timeout"`
-
-	// MessageField is the JSON object key the tolerant error decoder reads a
-	// human message from when an upstream error body is not a garlic DTO (for
-	// example {"message":...} or {"msg":...}). Defaults to "message".
-	MessageField string `mapstructure:"message_field" yaml:"message_field"`
 
 	// HTTPClient, when non-nil, is used as-is. Its Timeout is intentionally left
 	// to the caller; garlic relies on context deadlines instead.
@@ -66,14 +60,12 @@ type RetryConfig struct {
 	Policy     RetryPolicy   `mapstructure:"-" yaml:"-"`
 }
 
-// Defaults returns a Config with production-sensible defaults: a localhost base
-// URL, a 30s timeout backstop, the "message" error key, and retry enabled with
-// three attempts and exponential backoff between 100ms and 2s.
+// Defaults returns a Config with a localhost base URL, a 30s timeout backstop,
+// and retry enabled with exponential backoff between 100ms and 2s.
 func Defaults() *Config {
 	return &Config{
-		BaseURL:      "http://localhost",
-		Timeout:      30 * time.Second,
-		MessageField: "message",
+		BaseURL: "http://localhost",
+		Timeout: 30 * time.Second,
 		Retry: RetryConfig{
 			Enabled:    true,
 			MaxRetries: 3,

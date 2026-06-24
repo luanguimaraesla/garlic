@@ -2,10 +2,11 @@ package httpclient
 
 import (
 	"context"
-	"io"
 	"math"
 	"math/rand"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -87,6 +88,29 @@ func (defaultRetryPolicy) Backoff(minWait, maxWait time.Duration, attempt int, r
 	return clampDuration(time.Duration(backoff+jitter), minWait, maxWait)
 }
 
+func parseRetryAfter(v string) (time.Duration, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0, false
+	}
+
+	if secs, err := strconv.Atoi(v); err == nil {
+		if secs < 0 {
+			return 0, false
+		}
+		return time.Duration(secs) * time.Second, true
+	}
+
+	if t, err := http.ParseTime(v); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d, true
+		}
+		return 0, true
+	}
+
+	return 0, false
+}
+
 func clampDuration(d, minWait, maxWait time.Duration) time.Duration {
 	if d < minWait {
 		return minWait
@@ -113,15 +137,4 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	case <-ctx.Done():
 		return false
 	}
-}
-
-// drainAndClose discards a bounded amount of a response body and closes it so
-// the underlying connection can be returned to the pool before a retry.
-func drainAndClose(rc io.ReadCloser) {
-	if rc == nil {
-		return
-	}
-
-	_, _ = io.Copy(io.Discard, io.LimitReader(rc, 4<<10))
-	_ = rc.Close()
 }

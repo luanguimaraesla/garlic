@@ -152,9 +152,13 @@ func TestBody_nonReplayableStreamNotRetried(t *testing.T) {
 	}
 	c := newClientWithTransport(t, crt.RoundTrip, &Config{Retry: fastRetry(3)})
 
-	_, err := c.R(context.Background()).SetBodyStream(strings.NewReader("data"), 4).Put("/x")
-	if err == nil {
-		t.Fatal("expected an error from the 503 response")
+	resp, err := c.R(context.Background()).SetBodyStream(strings.NewReader("data"), 4).Put("/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Close() }()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", resp.StatusCode)
 	}
 	if crt.count() != 1 {
 		t.Errorf("a non-replayable stream must not be retried, attempts = %d", crt.count())

@@ -179,8 +179,8 @@ func (r *Request) SetResult(v any) *Request {
 	return r
 }
 
-// SetDoNotParseResponse leaves the response body open and unparsed so the caller
-// can stream it. The caller must Close the response.
+// SetDoNotParseResponse skips SetResult decoding. The response body is always
+// returned to the caller and must be closed.
 func (r *Request) SetDoNotParseResponse(v bool) *Request {
 	r.noParse = v
 	return r
@@ -260,24 +260,29 @@ func (r *Request) Send(method, path string) (*Response, error) {
 		errors.Field("http_method", method),
 		errors.Field("http_url", target),
 	)
+	l := r.logger().With(ectx.Zap())
 
 	if r.buildErr != nil {
 		return nil, errors.Propagate(r.buildErr, "invalid request", ectx)
 	}
-
-	l := r.logger().With(ectx.Zap())
 
 	ctx, cancel := r.contextWithTimeout()
 	if cancel != nil {
 		defer cancel()
 	}
 
-	res, err := r.execute(ctx, l, method, target, ectx)
+	ctx = logging.SetContextLogger(ctx, l)
+	res, err := r.execute(ctx, method, target)
 	if err != nil {
-		return nil, err
+		return nil, errors.Propagate(err, "failed to send request", ectx)
 	}
 
-	return r.handleResponse(res, ectx)
+	resp, err := r.handleResponse(res)
+	if err != nil {
+		return resp, errors.Propagate(err, "failed to handle response", ectx)
+	}
+
+	return resp, nil
 }
 
 func (r *Request) logger() *zap.Logger {
@@ -301,10 +306,10 @@ func (r *Request) contextWithTimeout() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(r.ctx, timeout)
 }
 
-func (r *Request) execute(ctx context.Context, l *zap.Logger, method, target string, ectx *errors.ContextT) (*http.Response, error) {
+func (r *Request) execute(ctx context.Context, method, target string) (*http.Response, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, method, target, nil)
 	if err != nil {
-		return nil, errors.PropagateAs(errors.KindSystemError, err, "failed to create HTTP request", ectx)
+		return nil, errors.PropagateAs(errors.KindSystemError, err, "failed to create HTTP request")
 	}
 
 	for k, vs := range r.client.baseHeaders {
@@ -318,7 +323,7 @@ func (r *Request) execute(ctx context.Context, l *zap.Logger, method, target str
 
 	replayable, err := r.applyBody(httpReq)
 	if err != nil {
-		return nil, errors.Propagate(err, "failed to set request body", ectx)
+		return nil, errors.Propagate(err, "failed to set request body")
 	}
 
 	// Once applyBody runs, httpReq.Body is live: a multipart body has a writer
@@ -332,17 +337,17 @@ func (r *Request) execute(ctx context.Context, l *zap.Logger, method, target str
 	}
 
 	if err := r.runBefore(httpReq); err != nil {
-		return abort(errors.Propagate(err, "before-request hook failed", ectx))
+		return abort(errors.Propagate(err, "before-request hook failed"))
 	}
 
 	r.injectTracing(ctx, httpReq)
 
 	callerSetAuth := httpReq.Header.Get("Authorization") != "" && r.authToken == "" && !r.hasBasic
 	if err := r.injectAuth(httpReq, callerSetAuth); err != nil {
-		return abort(errors.Propagate(err, "failed to inject authorization", ectx))
+		return abort(errors.Propagate(err, "failed to inject authorization"))
 	}
 
-	return r.doWithRetry(ctx, l, httpReq, replayable, callerSetAuth, ectx)
+	return r.doWithRetry(ctx, httpReq, replayable, callerSetAuth)
 }
 
 func (r *Request) applyBody(httpReq *http.Request) (bool, error) {
@@ -427,7 +432,8 @@ func (r *Request) injectAuth(httpReq *http.Request, callerSet bool) error {
 	return nil
 }
 
-func (r *Request) doWithRetry(ctx context.Context, l *zap.Logger, httpReq *http.Request, replayable, callerSetAuth bool, ectx *errors.ContextT) (*http.Response, error) {
+func (r *Request) doWithRetry(ctx context.Context, httpReq *http.Request, replayable, callerSetAuth bool) (*http.Response, error) {
+	l := logging.GetLoggerFromContext(ctx)
 	rc := r.client.config.Retry
 
 	policy := rc.Policy
@@ -451,12 +457,12 @@ func (r *Request) doWithRetry(ctx context.Context, l *zap.Logger, httpReq *http.
 			if httpReq.GetBody != nil {
 				body, gerr := httpReq.GetBody()
 				if gerr != nil {
-					return nil, errors.PropagateAs(errors.KindSystemError, gerr, "failed to rewind request body", ectx)
+					return nil, errors.PropagateAs(errors.KindSystemError, gerr, "failed to rewind request body")
 				}
 				httpReq.Body = body
 			}
 			if aerr := r.injectAuth(httpReq, callerSetAuth); aerr != nil {
-				return nil, errors.Propagate(aerr, "failed to inject authorization", ectx)
+				return nil, errors.Propagate(aerr, "failed to inject authorization")
 			}
 		}
 
@@ -468,7 +474,7 @@ func (r *Request) doWithRetry(ctx context.Context, l *zap.Logger, httpReq *http.
 
 		retry, cerr := policy.CheckRetry(ctx, httpReq.Method, resp, err, attempt)
 		if cerr != nil {
-			return nil, errors.PropagateAs(errors.KindSystemError, cerr, "request cancelled", ectx)
+			return nil, errors.PropagateAs(errors.KindSystemError, cerr, "request cancelled")
 		}
 		if !retry {
 			break
@@ -482,61 +488,27 @@ func (r *Request) doWithRetry(ctx context.Context, l *zap.Logger, httpReq *http.
 		l.Warn("retrying request", zap.Int("attempt", attempt+1), zap.Duration("wait", wait))
 
 		if !sleepCtx(ctx, wait) {
-			return nil, errors.PropagateAs(errors.KindSystemError, ctx.Err(), "request cancelled during backoff", ectx)
+			return nil, errors.PropagateAs(errors.KindSystemError, ctx.Err(), "request cancelled during backoff")
 		}
 	}
 
 	if err != nil {
-		return nil, errors.PropagateAs(errors.KindSystemError, err, "failed to make request", ectx)
+		return nil, errors.PropagateAs(errors.KindSystemError, err, "failed to make request")
 	}
 
 	return resp, nil
 }
 
-func (r *Request) handleResponse(res *http.Response, ectx *errors.ContextT) (*Response, error) {
-	messageField := r.client.messageField
-
-	if r.noParse {
-		wrapped := &Response{raw: res, parsed: false}
-
-		var resultErr error
-		if res.StatusCode < 200 || res.StatusCode >= 300 {
-			respErr := newResponseError(res.StatusCode, res.Header, nil, messageField)
-			respErr.ErrorT = errors.Propagate(respErr.ErrorT, "bad response from external service", ectx)
-			resultErr = respErr
-		}
-
-		if herr := r.runAfter(wrapped); herr != nil {
-			return wrapped, errors.Propagate(herr, "after-response hook failed", ectx)
-		}
-		return wrapped, resultErr
-	}
-
-	raw, readErr := io.ReadAll(res.Body)
-	_ = res.Body.Close()
-	if readErr != nil {
-		return nil, errors.PropagateAs(errors.KindSystemError, readErr, "failed to read response body", ectx)
-	}
-
-	wrapped := &Response{raw: res, body: raw, parsed: true}
-
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		respErr := newResponseError(res.StatusCode, res.Header, raw, messageField)
-		respErr.ErrorT = errors.Propagate(respErr.ErrorT, "bad response from external service", ectx)
-		if herr := r.runAfter(wrapped); herr != nil {
-			return wrapped, errors.Propagate(herr, "after-response hook failed", ectx)
-		}
-		return wrapped, respErr
-	}
-
-	if r.result != nil {
-		if err := json.Unmarshal(raw, r.result); err != nil {
-			return wrapped, errors.PropagateAs(errors.KindSystemError, err, "failed to decode response body", ectx)
+func (r *Request) handleResponse(res *http.Response) (*Response, error) {
+	wrapped := &Response{res}
+	if wrapped.IsSuccess() && !r.noParse && r.result != nil {
+		if err := wrapped.Decode(r.result); err != nil {
+			return wrapped, errors.Propagate(err, "error handling response")
 		}
 	}
 
 	if herr := r.runAfter(wrapped); herr != nil {
-		return wrapped, errors.Propagate(herr, "after-response hook failed", ectx)
+		return wrapped, errors.Propagate(herr, "after-response hook failed")
 	}
 
 	return wrapped, nil

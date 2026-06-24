@@ -15,6 +15,8 @@ type DTO struct {
 	Details map[string]any `json:"details,omitempty" mapstructure:"details,omitempty"`
 }
 
+// NewDTO returns the transferable error DTO for err. Non-garlic errors are
+// converted to a generic KindError DTO.
 func NewDTO(err error) *DTO {
 	e, ok := err.(Transferable)
 	if !ok {
@@ -24,7 +26,8 @@ func NewDTO(err error) *DTO {
 	return e.ErrorDTO()
 }
 
-func (dto *DTO) Decode() *ErrorT {
+// MustDecode converts the DTO into an ErrorT and panics when Code is unknown.
+func (dto *DTO) MustDecode() *ErrorT {
 	return &ErrorT{
 		kind:    GetByCode(dto.Code),
 		message: dto.Error,
@@ -32,36 +35,21 @@ func (dto *DTO) Decode() *ErrorT {
 	}
 }
 
-// DecodeSafe reconstructs an *ErrorT from a DTO received over the wire without
-// panicking on an unknown or empty kind code. When the code is registered the
-// decode is faithful (the original kind, message, and details are preserved).
-// Otherwise the error is classified with fallback (or KindSystemError when
-// fallback is nil) and fallbackOpts are applied; fallbackOpts are ignored on
-// the faithful path. Use it instead of Decode for untrusted response bodies.
-func (dto *DTO) DecodeSafe(fallback *Kind, fallbackOpts ...Opt) *ErrorT {
-	if kind, ok := LookupByCode(dto.Code); ok {
-		details := dto.Details
-		if details == nil {
-			details = map[string]any{}
-		}
-
-		return &ErrorT{
-			kind:    kind,
-			message: dto.Error,
-			Details: details,
-		}
+// Decode converts the DTO into an ErrorT when Code is registered.
+func (dto *DTO) Decode() (*ErrorT, bool) {
+	kind, ok := LookupByCode(dto.Code)
+	if !ok {
+		return nil, false
 	}
 
-	if fallback == nil {
-		fallback = KindSystemError
-	}
-
-	return New(fallback, dto.Error, fallbackOpts...)
+	return &ErrorT{
+		kind:    kind,
+		message: dto.Error,
+		Details: dto.Details,
+	}, true
 }
 
-// JSON serializes the DTO struct into a JSON formatted byte slice.
-// It returns the serialized data as json.RawMessage, which is a type alias for []byte.
-// If an error occurs during the marshaling process, the function will panic.
+// JSON marshals the DTO and panics if the payload cannot be encoded.
 func (dto *DTO) JSON() json.RawMessage {
 	b, err := json.Marshal(dto)
 	if err != nil {

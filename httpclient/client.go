@@ -23,10 +23,9 @@ type Requester interface {
 // Client holds shared configuration and a single pooled http.Client, and forks
 // per-call requests via R. It is safe for concurrent use.
 type Client struct {
-	config       *Config
-	doer         Doer
-	baseHeaders  http.Header
-	messageField string
+	config      *Config
+	doer        Doer
+	baseHeaders http.Header
 }
 
 var _ Requester = (*Client)(nil)
@@ -65,16 +64,10 @@ func New(config *Config) (*Client, error) {
 		baseHeaders.Set(k, v)
 	}
 
-	messageField := config.MessageField
-	if messageField == "" {
-		messageField = "message"
-	}
-
 	return &Client{
-		config:       config,
-		doer:         doer,
-		baseHeaders:  baseHeaders,
-		messageField: messageField,
+		config:      config,
+		doer:        doer,
+		baseHeaders: baseHeaders,
 	}, nil
 }
 

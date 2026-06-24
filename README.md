@@ -102,7 +102,7 @@ func (a *HealthApp) Routes() rest.Routes {
 | [`monitoring`](./monitoring) | OpenTelemetry HTTP request metrics |
 | [`observability`](./observability) | OpenTelemetry MeterProvider setup that exports metrics over OTLP/gRPC |
 | [`tracing`](./tracing) | Request and session ID propagation through context and headers |
-| [`httpclient`](./httpclient) | Pooled HTTP client with auth, streaming, typed errors, tracing, and idempotency-aware retry |
+| [`httpclient`](./httpclient) | Pooled HTTP client with auth, streaming, garlic error decoding, tracing, and idempotency-aware retry |
 | [`crypto`](./crypto) | AES-256-GCM authenticated encryption and SHA-256 hashing |
 | [`worker`](./worker) | Goroutine pool for background tasks |
 | [`toolkit`](./toolkit) | Generic pointer and nil-checking helpers |
@@ -598,22 +598,22 @@ resp, err := conn.R(ctx).
     Get("/v1/orders/" + orderID)
 ```
 
-Non-2xx responses return a typed `*httpclient.ResponseError`. It preserves the
-HTTP status, the `Retry-After` hint, and selected headers. It is safe for any
-response body shape, still matches `errors.IsKind`, and can be inspected with
-the standard library's `errors.As`.
+`Send` returns errors for request-building, transport, hook, and decode
+failures. HTTP statuses stay on the returned response, so callers decide whether
+to decode a garlic error DTO, stream the body, or handle the status directly.
+`Response.DecodeError` returns a garlic error that works with `errors.IsKind`.
 
 ```go
-var responseErr *httpclient.ResponseError
-if errors.As(err, &responseErr) && responseErr.StatusCode() == http.StatusTooManyRequests {
-    if delay, ok := responseErr.RetryAfter(); ok {
-        time.Sleep(delay)
+if resp.IsError() {
+    err = resp.DecodeError()
+    if errors.IsKind(err, errors.KindNotFoundError) {
+        // handle a missing order
     }
 }
 ```
 
 The client also supports streaming uploads with explicit `Content-Length`, raw
-streaming downloads through `SetDoNotParseResponse`, pluggable auth through a
+streaming downloads through the response body, pluggable auth through a
 `TokenSource`, custom transports, `http.RoundTripper`, before/after hooks, and
 idempotency-aware retry. Retry is enabled for `GET`, `HEAD`, `OPTIONS`, `PUT`,
 and `DELETE` by default. Use `EnableRetry` to opt a `POST` request in.

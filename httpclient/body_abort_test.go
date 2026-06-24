@@ -104,8 +104,9 @@ func TestSetBody_bufferBackedReaderIsRetried(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if resp.StatusCode() != http.StatusOK {
-		t.Errorf("status = %d, want 200", resp.StatusCode())
+	defer func() { _ = resp.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want 200", resp.StatusCode)
 	}
 	if crt.count() != 2 {
 		t.Errorf("attempts = %d, want 2 (buffer-backed reader should be retried)", crt.count())
