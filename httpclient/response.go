@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/luanguimaraesla/garlic/errors"
 )
@@ -19,6 +20,17 @@ func (r *Response) IsSuccess() bool { return r.StatusCode >= 200 && r.StatusCode
 
 // IsError reports whether the status is 400 or greater.
 func (r *Response) IsError() bool { return r.StatusCode >= 400 }
+
+// RetryAfter returns the Retry-After header parsed as a duration. It reports
+// false when the header is missing or invalid. A valid header can return a zero
+// duration, such as Retry-After: 0 or a past HTTP date.
+func (r *Response) RetryAfter() (time.Duration, bool) {
+	if r == nil || r.Response == nil {
+		return 0, false
+	}
+
+	return parseRetryAfter(r.Header.Get("Retry-After"))
+}
 
 // Decode JSON-decodes the response body into v and closes it.
 func (r *Response) Decode(v any) error {
