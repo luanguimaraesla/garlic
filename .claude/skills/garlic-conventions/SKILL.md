@@ -386,13 +386,18 @@ sensitive message and details stay server-side. The building blocks live in the
   `Mirror` plus a private `origin`. This is what `rest.WriteError` uses for
   non-user errors.
 - On the receiving side, `dto.Decode()` rebuilds the origin as a code-only
-  `errors.HeadlessErrorT`. Read it with `err.Origin()` and `errors.CodeOf(...)`;
-  the original message and details were never transmitted.
+  `errors.HeadlessErrorT`; the original message and details were never
+  transmitted.
+- **ALWAYS** read the code with `errors.OriginCodeOf(err)`, not by reaching for
+  `err.Origin()` yourself. It walks the error chain, because propagation carries
+  `Details` outward but not the origin, so after a `Propagate` the origin sits
+  deeper than the outermost error. `errors.Origin(err)` returns the origin
+  reference itself for the rare case you need more than the code.
 
 ```go
-// A client inspecting a sanitized upstream error can recover the origin code.
-if e, ok := dto.Decode(); ok && e.HasOrigin() {
-    originCode := errors.CodeOf(e.Origin()) // e.g. "S00503", for support
+// Recover the origin code from a possibly propagated sanitized error.
+if code, ok := errors.OriginCodeOf(err); ok {
+    // code is a bounded reference, e.g. "S00503", safe to branch on
 }
 ```
 

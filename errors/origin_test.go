@@ -227,3 +227,66 @@ func TestErrorT_Description(t *testing.T) {
 		t.Errorf("Description() = %q, want %q", err.Description(), KindNotFoundError.Description)
 	}
 }
+
+// Origin returns the underlying origin reference itself, walking the chain since
+// propagation carries Details outward but not the origin.
+func TestOrigin_returnsUnderlyingError(t *testing.T) {
+	originErr := New(KindSystemError, "secret")
+	inner := Override(KindNotFoundError, originErr, "not found")
+	outer := Propagate(inner, "service failed")
+
+	if outer.origin != nil {
+		t.Fatal("propagation should not set the origin on the outer error")
+	}
+	if got := Origin(outer); got != error(originErr) {
+		t.Errorf("Origin() = %v, want the underlying origin error itself", got)
+	}
+}
+
+func TestOrigin_nilWhenAbsent(t *testing.T) {
+	if got := Origin(Propagate(New(KindNotFoundError, "missing"), "wrapper")); got != nil {
+		t.Errorf("Origin() = %v, want nil when nothing carries an origin", got)
+	}
+	if got := Origin(fmt.Errorf("plain")); got != nil {
+		t.Errorf("Origin(plain) = %v, want nil", got)
+	}
+}
+
+func TestOriginCodeOf_directOrigin(t *testing.T) {
+	err := Override(KindNotFoundError, New(KindSystemError, "secret"), "not found")
+
+	code, ok := OriginCodeOf(err)
+	if !ok {
+		t.Fatal("OriginCodeOf() ok = false, want true")
+	}
+	if code != KindSystemError.Code {
+		t.Errorf("code = %q, want %q", code, KindSystemError.Code)
+	}
+}
+
+// OriginCodeOf must walk the chain to find an origin left deeper by propagation.
+func TestOriginCodeOf_walksChainAfterPropagate(t *testing.T) {
+	inner := Override(KindNotFoundError, New(KindSystemError, "secret"), "not found")
+	outer := Propagate(inner, "service failed")
+
+	code, ok := OriginCodeOf(outer)
+	if !ok {
+		t.Fatal("OriginCodeOf() ok = false, want true for a deeper origin")
+	}
+	if code != KindSystemError.Code {
+		t.Errorf("code = %q, want %q", code, KindSystemError.Code)
+	}
+}
+
+func TestOriginCodeOf_noOrigin(t *testing.T) {
+	err := Propagate(New(KindNotFoundError, "missing"), "wrapper")
+	if code, ok := OriginCodeOf(err); ok {
+		t.Errorf("OriginCodeOf() = (%q, true), want (\"\", false) when nothing carries an origin", code)
+	}
+}
+
+func TestOriginCodeOf_nonGarlicError(t *testing.T) {
+	if code, ok := OriginCodeOf(fmt.Errorf("plain")); ok {
+		t.Errorf("OriginCodeOf() = (%q, true), want (\"\", false) for a non-garlic error", code)
+	}
+}

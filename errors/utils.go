@@ -46,3 +46,30 @@ func IsKind(err error, kind *Kind) bool {
 	_, ok := AsKind(err, kind)
 	return ok
 }
+
+// Origin walks the error chain and returns the first origin reference it finds,
+// or nil when none. The walk is needed because propagation carries Details
+// outward but not the origin, so an origin can sit deeper than the outermost
+// error. The origin is sanitized metadata and never reaches the message, the
+// logs, or the cause chain. Use OriginCodeOf when you only need its code.
+func Origin(err error) error {
+	// Read the field, not the Origin method, which delegates here and would recurse.
+	for current := err; current != nil; current = stderrors.Unwrap(current) {
+		if e, ok := current.(*ErrorT); ok && e.origin != nil {
+			return e.origin
+		}
+	}
+
+	return nil
+}
+
+// OriginCodeOf returns the code of the first origin in the chain, reporting false
+// when none does. It narrows Origin to the code most callers need.
+func OriginCodeOf(err error) (string, bool) {
+	origin := Origin(err)
+	if origin == nil {
+		return "", false
+	}
+
+	return CodeOf(origin), true
+}
