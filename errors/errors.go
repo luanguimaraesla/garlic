@@ -77,12 +77,7 @@ func New(kind *Kind, message string, opts ...Opt) *ErrorT {
 // This function is useful when you want to create an error object without automatically
 // adding tracing information, allowing for more control over the error's metadata and context.
 func Raw(kind *Kind, message string, opts ...Opt) *ErrorT {
-	e := newErrorT(kind, message, nil)
-	for _, opt := range opts {
-		opt.Opt(e)
-	}
-
-	return e
+	return newErrorT(kind, message, nil).With(opts...)
 }
 
 // From creates a new ErrorT instance from an existing error, using the error's
@@ -92,12 +87,7 @@ func Raw(kind *Kind, message string, opts ...Opt) *ErrorT {
 // instances, enabling enhanced error tracking and handling with additional context
 // and metadata.
 func From(kind *Kind, err error, message string, opts ...Opt) *ErrorT {
-	e := newErrorT(kind, message, nil).wrap(err)
-	for _, opt := range opts {
-		opt.Opt(e)
-	}
-
-	return e
+	return newErrorT(kind, message, nil).wrap(err).With(opts...)
 }
 
 // Override builds an error that presents kind and message to the outside world
@@ -108,24 +98,14 @@ func From(kind *Kind, err error, message string, opts ...Opt) *ErrorT {
 // must be surfaced as a safer, generic error but you still want the original
 // code available for troubleshooting.
 func Override(kind *Kind, origin error, message string, opts ...Opt) *ErrorT {
-	e := newErrorT(kind, message, origin)
-	for _, opt := range opts {
-		opt.Opt(e)
-	}
-
-	return e
+	return newErrorT(kind, message, origin).With(opts...)
 }
 
 // Mirror builds an error whose message is the kind's static Description, so it
 // captures nothing dynamic or sensitive. The result says only what the kind
 // already documents, which makes it safe to hand straight to a client.
 func Mirror(kind *Kind, opts ...Opt) *ErrorT {
-	e := newErrorT(kind, kind.Description, nil)
-	for _, opt := range opts {
-		opt.Opt(e)
-	}
-
-	return e
+	return newErrorT(kind, kind.Description, nil).With(opts...)
 }
 
 // MirrorOverride combines Mirror and Override: the visible message is the kind's
@@ -134,12 +114,7 @@ func Mirror(kind *Kind, opts ...Opt) *ErrorT {
 // projection used to sanitize a system error while preserving a reference to its
 // cause.
 func MirrorOverride(kind *Kind, origin error, opts ...Opt) *ErrorT {
-	e := newErrorT(kind, kind.Description, origin)
-	for _, opt := range opts {
-		opt.Opt(e)
-	}
-
-	return e
+	return newErrorT(kind, kind.Description, origin).With(opts...)
 }
 
 // Kind returns the kind of the ErrorT instance.
@@ -151,21 +126,30 @@ func (e *ErrorT) Kind() *Kind {
 	return e.kind
 }
 
-// Origin returns the private reference to the underlying failure, or nil when
-// the error carries none. The origin is troubleshooting metadata; it is never
-// part of Error or of the human-facing message.
+// Origin returns the sanitized origin reference from this error or one it wraps,
+// or nil when none. The origin is troubleshooting metadata and never part of Error.
 func (e *ErrorT) Origin() error {
-	return e.origin
+	return Origin(e)
 }
 
-// HasOrigin reports whether a private origin reference is attached.
+// HasOrigin reports whether this error or one it wraps carries an origin.
 func (e *ErrorT) HasOrigin() bool {
-	return e.origin != nil
+	return Origin(e) != nil
 }
 
 // Code is shorthand for the code of the error's kind.
 func (e *ErrorT) Code() string {
 	return e.Kind().Code
+}
+
+// With applies opts to the error in place and returns it, so options can be
+// attached fluently after construction.
+func (e *ErrorT) With(opts ...Opt) *ErrorT {
+	for _, opt := range opts {
+		opt.Opt(e)
+	}
+
+	return e
 }
 
 // wrap takes an existing error and wraps it with the current ErrorT instance,
