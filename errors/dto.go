@@ -9,15 +9,26 @@ type Transferable interface {
 }
 
 type DTO struct {
-	Name    string         `json:"name,omitempty" mapstructure:"name,omitempty"`
-	Error   string         `json:"error" mapstructure:"error"`
-	Code    string         `json:"kind" mapstructure:"kind"`
+	Name  string `json:"name,omitempty" mapstructure:"name,omitempty"`
+	Error string `json:"error" mapstructure:"error"`
+	Code  string `json:"kind" mapstructure:"kind"`
+
+	// Origin carries the kind code of the error that was suppressed before this
+	// DTO was built. It is set when a sanitized error (a system failure projected
+	// to a generic kind) still needs to tell the client which underlying kind
+	// actually failed, so support can trace it. Only the code travels; the
+	// suppressed error's message, name, and details never do.
+	Origin  string         `json:"origin,omitempty" mapstructure:"origin,omitempty"`
 	Details map[string]any `json:"details,omitempty" mapstructure:"details,omitempty"`
 }
 
-// NewDTO returns the transferable error DTO for err. Non-garlic errors are
-// converted to a generic KindError DTO.
+// NewDTO returns the transferable error DTO for err, or nil when err is nil.
+// Non-garlic errors are converted to a generic KindError DTO.
 func NewDTO(err error) *DTO {
+	if err == nil {
+		return nil
+	}
+
 	e, ok := err.(Transferable)
 	if !ok {
 		e = Raw(KindError, err.Error())
@@ -28,11 +39,10 @@ func NewDTO(err error) *DTO {
 
 // MustDecode converts the DTO into an ErrorT and panics when Code is unknown.
 func (dto *DTO) MustDecode() *ErrorT {
-	return &ErrorT{
-		kind:    GetByCode(dto.Code),
-		message: dto.Error,
-		Details: dto.Details,
-	}
+	e := newErrorT(GetByCode(dto.Code), dto.Error, NewHeadlessError(dto.Origin))
+	e.Details = dto.Details
+
+	return e
 }
 
 // Decode converts the DTO into an ErrorT when Code is registered.
@@ -42,11 +52,9 @@ func (dto *DTO) Decode() (*ErrorT, bool) {
 		return nil, false
 	}
 
-	return &ErrorT{
-		kind:    kind,
-		message: dto.Error,
-		Details: dto.Details,
-	}, true
+	e := newErrorT(kind, dto.Error, NewHeadlessError(dto.Origin))
+	e.Details = dto.Details
+	return e, true
 }
 
 // JSON marshals the DTO and panics if the payload cannot be encoded.

@@ -358,15 +358,47 @@ func (a *API) Create(w http.ResponseWriter, r *http.Request) error {
 When a handler returns a non-nil error, the wrapper:
 1. Logs with `errors.Zap(err)` (Warn for user errors, Error for system errors)
 2. Calls `rest.WriteError(err).Must(w)`, the one canonical error writer, which
-   projects the error through `errors.ErrorT.PublicDTO`:
+   projects the error through `protectErrorDTO`:
    - User errors (4xx) are exposed in full — name, message, code, details/hints
      — with `Kind.StatusCode()` as the status.
-   - System errors (5xx) keep their real HTTP status, but the body is redacted
-     to a reference: the kind's code (so a client can quote it to support) plus
-     the standard HTTP status text. The kind name, the static `Description`, the
-     dynamic message, and details are all stripped, so the code identifies the
-     failure without describing it.
+   - System errors (5xx) keep their real HTTP status, but the body is sanitized
+     to the generic kind for that status (via `errors.KindForStatus`). The
+     generic name, standard status text, and generic status code cross the wire,
+     plus a "contact support" hint. The specific kind's dynamic message and
+     details never leave the server. The specific kind's code is preserved in the
+     `origin` field so a client can still quote it to support (see Origin
+     references below).
    - `rest.WriteMessage` is for non-error informational responses only.
+
+### Origin references (troubleshooting without leaking)
+
+When a system error is sanitized for the wire, its real kind code is not thrown
+away: it travels in `DTO.Origin` so support can trace the exact failure while the
+sensitive message and details stay server-side. The building blocks live in the
+`errors` package:
+
+- `errors.Override(kind, origin, message, opts...)` presents `kind`/`message` to
+  the client while stashing `origin` as a private reference. Only the origin's
+  kind code crosses the wire, via `ErrorDTO`.
+- `errors.Mirror(kind, opts...)` builds an error whose message is the kind's
+  static `Description`, capturing nothing dynamic or sensitive.
+- `errors.MirrorOverride(kind, origin, opts...)` is the sanitizing projection:
+  `Mirror` plus a private `origin`. This is what `rest.WriteError` uses for
+  non-user errors.
+- On the receiving side, `dto.Decode()` rebuilds the origin as a code-only
+  `errors.HeadlessErrorT`. Read it with `err.Origin()` and `errors.CodeOf(...)`;
+  the original message and details were never transmitted.
+
+```go
+// A client inspecting a sanitized upstream error can recover the origin code.
+if e, ok := dto.Decode(); ok && e.HasOrigin() {
+    originCode := errors.CodeOf(e.Origin()) // e.g. "S00503", for support
+}
+```
+
+- **NEVER** put sensitive runtime detail (addresses, credentials, raw driver
+  messages) in a kind's static `Description` — it is the mirrored message and
+  crosses the wire for system errors.
 
 ### Response helpers
 
