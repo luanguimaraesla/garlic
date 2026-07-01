@@ -21,8 +21,21 @@ type ErrorT struct {
 	kind            *Kind
 	message         string
 	cause           error
+	origin          error
 	Details         map[string]any
 	Troubleshooting Troubleshooting
+}
+
+// newErrorT builds an ErrorT with its fields set and an empty details map. Every
+// exported builder funnels through it so origin and details are set the same way;
+// a cause is attached separately through wrap.
+func newErrorT(kind *Kind, message string, origin error) *ErrorT {
+	return &ErrorT{
+		kind:    kind,
+		message: message,
+		origin:  origin,
+		Details: map[string]any{},
+	}
 }
 
 // Propagate creates a new ErrorT instance with a default error kind (KindError),
@@ -64,12 +77,7 @@ func New(kind *Kind, message string, opts ...Opt) *ErrorT {
 // This function is useful when you want to create an error object without automatically
 // adding tracing information, allowing for more control over the error's metadata and context.
 func Raw(kind *Kind, message string, opts ...Opt) *ErrorT {
-	e := &ErrorT{
-		kind:    kind,
-		message: message,
-		Details: map[string]any{},
-	}
-
+	e := newErrorT(kind, message, nil)
 	for _, opt := range opts {
 		opt.Opt(e)
 	}
@@ -84,14 +92,49 @@ func Raw(kind *Kind, message string, opts ...Opt) *ErrorT {
 // instances, enabling enhanced error tracking and handling with additional context
 // and metadata.
 func From(kind *Kind, err error, message string, opts ...Opt) *ErrorT {
-	e := &ErrorT{
-		kind:    kind,
-		message: message,
-		Details: map[string]any{},
+	e := newErrorT(kind, message, nil).wrap(err)
+	for _, opt := range opts {
+		opt.Opt(e)
 	}
 
-	_ = e.wrap(err)
+	return e
+}
 
+// Override builds an error that presents kind and message to the outside world
+// while keeping origin as a private reference to the failure that really
+// happened. The origin never shows up in Error or in the wire message; only its
+// kind code travels, through ErrorDTO, so support can trace the real cause
+// without the sensitive error leaking to the client. Use it when a raw failure
+// must be surfaced as a safer, generic error but you still want the original
+// code available for troubleshooting.
+func Override(kind *Kind, origin error, message string, opts ...Opt) *ErrorT {
+	e := newErrorT(kind, message, origin)
+	for _, opt := range opts {
+		opt.Opt(e)
+	}
+
+	return e
+}
+
+// Mirror builds an error whose message is the kind's static Description, so it
+// captures nothing dynamic or sensitive. The result says only what the kind
+// already documents, which makes it safe to hand straight to a client.
+func Mirror(kind *Kind, opts ...Opt) *ErrorT {
+	e := newErrorT(kind, kind.Description, nil)
+	for _, opt := range opts {
+		opt.Opt(e)
+	}
+
+	return e
+}
+
+// MirrorOverride combines Mirror and Override: the visible message is the kind's
+// static Description, and the failure that really happened is kept as a private
+// origin whose kind code still crosses the wire for troubleshooting. It is the
+// projection used to sanitize a system error while preserving a reference to its
+// cause.
+func MirrorOverride(kind *Kind, origin error, opts ...Opt) *ErrorT {
+	e := newErrorT(kind, kind.Description, origin)
 	for _, opt := range opts {
 		opt.Opt(e)
 	}
@@ -106,6 +149,23 @@ func From(kind *Kind, err error, message string, opts ...Opt) *ErrorT {
 // specific type of error encountered.
 func (e *ErrorT) Kind() *Kind {
 	return e.kind
+}
+
+// Origin returns the private reference to the underlying failure, or nil when
+// the error carries none. The origin is troubleshooting metadata; it is never
+// part of Error or of the human-facing message.
+func (e *ErrorT) Origin() error {
+	return e.origin
+}
+
+// HasOrigin reports whether a private origin reference is attached.
+func (e *ErrorT) HasOrigin() bool {
+	return e.origin != nil
+}
+
+// Code is shorthand for the code of the error's kind.
+func (e *ErrorT) Code() string {
+	return e.Kind().Code
 }
 
 // wrap takes an existing error and wraps it with the current ErrorT instance,
@@ -150,40 +210,18 @@ func (e *ErrorT) Error() string {
 	return message
 }
 
-// DTO converts the ErrorT instance into a map suitable for data transfer objects (DTOs).
-// This method constructs a DTO object containing the error message and kind hierarchy, and
-// includes additional details from the options map if they are marked as PUBLIC visibility.
-// It ensures that only relevant and non-sensitive information is exposed, making it
-// suitable for returning error details in API responses or logs.
+// ErrorDTO converts the error into its transferable DTO: the kind's name and
+// code, the dynamic message, and the details. When an origin is attached, its
+// kind code is copied into DTO.Origin so a sanitized error can still point the
+// receiver at the underlying failure. Only the origin's code travels; its
+// message, name, and details stay behind.
 func (e *ErrorT) ErrorDTO() *DTO {
 	return &DTO{
 		Name:    e.kind.FQN(),
 		Error:   e.message,
 		Code:    e.kind.Code,
+		Origin:  CodeOf(e.origin),
 		Details: e.Details,
-	}
-}
-
-// PublicDTO is the wire-safe projection of an error.
-//
-//   - User-class errors (anything under KindUserError, i.e. 4xx) are safe to
-//     expose in full: name, dynamic message, code, and details all cross the wire.
-//   - Every other error (system/root, i.e. 5xx) is redacted to an opaque
-//     reference: the wire carries the kind's Code, which a client can quote to
-//     support to identify the failure, plus the standard HTTP status text. The
-//     kind's name, its dynamic message, and its details never cross the wire, so
-//     the code is an identifier only, not a description of what went wrong.
-//
-// Use PublicDTO (not ErrorDTO) when serializing an error into an API response so
-// that internal failures never leak sensitive runtime detail.
-func (e *ErrorT) PublicDTO() *DTO {
-	if e.kind.Is(KindUserError) {
-		return e.ErrorDTO()
-	}
-
-	return &DTO{
-		Error: KindForStatus(e.kind.StatusCode()).Description,
-		Code:  e.kind.Code,
 	}
 }
 

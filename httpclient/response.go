@@ -64,7 +64,7 @@ func (r *Response) DecodeError() error {
 
 	var gerrDTO errors.DTO
 	if err := dec.Decode(&gerrDTO); err != nil {
-		return errors.PropagateAs(KindUnknownResponseError, err, "failed to decode response error")
+		return errors.PropagateAs(KindResponseDecodeError, err, "failed to decode error response")
 	}
 
 	gerr, ok := gerrDTO.Decode()

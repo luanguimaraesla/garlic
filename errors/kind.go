@@ -121,3 +121,21 @@ func (k *Kind) Is(other *Kind) bool {
 	}
 	return false
 }
+
+// KindCoder is implemented by errors that expose a bare kind code, such as a
+// headless origin reference decoded from the wire. It lets callers read the code
+// without knowing the concrete error type.
+type KindCoder interface {
+	Code() string
+}
+
+// CodeOf returns the kind code carried by err, or an empty string when err does
+// not expose one.
+func CodeOf(err error) string {
+	e, ok := err.(KindCoder)
+	if !ok {
+		return ""
+	}
+
+	return e.Code()
+}
