@@ -693,9 +693,10 @@ make cover/html                  # Open the HTML coverage report
 
 ### Garliclint
 
-`garliclint` checks the Garlic error-propagation rules (`G0.01` through
-`G0.07`). The first release runs only this rule family. Install a versioned
-release after the first Garlic tag that includes `cmd/garliclint`:
+`garliclint` checks these Garlic error-propagation rules: `G0.01`, `G0.02`,
+`G0.04`, `G0.06`, and `G0.07`. The first release runs only this rule family.
+Install a versioned release after the first Garlic tag that includes
+`cmd/garliclint`:
 
 ```bash
 go install github.com/luanguimaraesla/garlic/cmd/garliclint@<tag>
@@ -706,7 +707,14 @@ Use a pinned tag for CI, not `@latest`. Until a release contains the command,
 build or run it from the Garlic checkout. The command exits non-zero when it
 finds violations, so it can gate downstream CI. Copy or include
 [`garliclint/examples/Makefile.garlic-lint`](garliclint/examples/Makefile.garlic-lint)
-to install and run the pinned command from a Make target.
+to install and run the pinned command from a Make target. Its default artifacts
+are version-qualified under `.tools/`, so changing `GARLIC_VERSION` installs
+and executes that version. `GARLIC_VERSION` must be a pinned `vX.Y.Z` tag. Set
+`GARLICLINT_BIN` only for checkout testing; it must name an existing executable
+and skips installation. Relative overrides, including `garliclint`, resolve
+from the invoking directory rather than `PATH`. Local checkout builds report
+`dev`; installed builds report their embedded module version when Go provides
+one.
 
 Garlic runs this command as a non-blocking CI report while its existing findings
 are remediated. This does not change the non-zero exit behavior for downstream

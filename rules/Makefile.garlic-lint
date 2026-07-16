@@ -1,6 +1,7 @@
 .PHONY: garliclint
 garliclint:
 	@echo "> Building garliclint"
+	mkdir -p build
 	$(GOBUILD) -o build/garliclint ./cmd/garliclint
 	@echo "> Running garliclint"
 	./build/garliclint ./...
@@ -8,3 +9,7 @@ garliclint:
 .PHONY: garliclint-smoke
 garliclint-smoke:
 	bash garliclint/scripts/downstream-smoke.sh
+
+.PHONY: garliclint-makefile-security-test
+garliclint-makefile-security-test:
+	bash garliclint/scripts/downstream-makefile-security-test.sh

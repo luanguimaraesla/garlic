@@ -37,6 +37,14 @@ func foreignConstructor() error {
 	return foreign.New() // want "\\[G0.01\\]"
 }
 
+func foreignPropagation() error {
+	return foreign.Propagate() // want "\\[G0.01\\]"
+}
+
+func foreignWith() error {
+	return foreign.With() // want "\\[G0.01\\]"
+}
+
 func nested() error {
 	fn := func(err error) error {
 		return err // want "\\[G0.01\\]"
@@ -48,6 +56,18 @@ func nested() error {
 func naked(err error) (result error) { // want "\\[G0.01\\]"
 	result = err
 	return
+}
+
+func tupleHelper() (int, error) {
+	return 0, nil
+}
+
+func tupleReturn() (int, error) {
+	return tupleHelper() // want "\\[G0.01\\]"
+}
+
+func validTupleControl() (int, error) {
+	return 0, errors.Propagate(nil, "handled")
 }
 
 func garlicConstructors() error {

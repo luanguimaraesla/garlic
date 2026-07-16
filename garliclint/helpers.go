@@ -133,28 +133,52 @@ func errorReturnExpressions(ret *ast.ReturnStmt, fn *ast.FuncType, info *types.I
 		return namedErrorResults(fn, info)
 	}
 
+	resultTypes := declaredResultTypes(fn, info)
+	if len(ret.Results) == len(resultTypes) {
+		return explicitErrorReturnExpressions(ret.Results, resultTypes)
+	}
+	if len(ret.Results) == 1 {
+		return tupleErrorReturnExpression(ret.Results[0], resultTypes, info)
+	}
+	return nil
+}
+
+func declaredResultTypes(fn *ast.FuncType, info *types.Info) []types.Type {
 	var resultTypes []types.Type
 	for _, field := range fn.Results.List {
-		typeOfResult := info.TypeOf(field.Type)
+		resultType := info.TypeOf(field.Type)
 		count := len(field.Names)
 		if count == 0 {
 			count = 1
 		}
 		for range count {
-			resultTypes = append(resultTypes, typeOfResult)
+			resultTypes = append(resultTypes, resultType)
 		}
 	}
-	if len(ret.Results) != len(resultTypes) {
-		return nil
-	}
+	return resultTypes
+}
 
+func explicitErrorReturnExpressions(results []ast.Expr, resultTypes []types.Type) []ast.Expr {
 	var expressions []ast.Expr
-	for i, expr := range ret.Results {
+	for i, expr := range results {
 		if isErrorType(resultTypes[i]) {
 			expressions = append(expressions, expr)
 		}
 	}
 	return expressions
+}
+
+func tupleErrorReturnExpression(result ast.Expr, resultTypes []types.Type, info *types.Info) []ast.Expr {
+	tuple, ok := info.TypeOf(result).(*types.Tuple)
+	if !ok || tuple.Len() != len(resultTypes) {
+		return nil
+	}
+	for i := range resultTypes {
+		if isErrorType(resultTypes[i]) && isErrorType(tuple.At(i).Type()) {
+			return []ast.Expr{result}
+		}
+	}
+	return nil
 }
 
 func namedErrorResults(fn *ast.FuncType, info *types.Info) []ast.Expr {
