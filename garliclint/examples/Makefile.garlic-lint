@@ -1,0 +1,10 @@
+# Set this to the first Garlic release that includes cmd/garliclint.
+GARLIC_VERSION ?= v0.0.0-next
+
+.PHONY: garliclint-install
+garliclint-install:
+	go install github.com/luanguimaraesla/garlic/cmd/garliclint@$(GARLIC_VERSION)
+
+.PHONY: garliclint
+garliclint:
+	garliclint ./...

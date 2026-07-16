@@ -690,3 +690,29 @@ make fix                         # Run goimports, go mod tidy, and vendoring
 make cover                       # Show the text coverage report
 make cover/html                  # Open the HTML coverage report
 ```
+
+### Garliclint
+
+`garliclint` checks the Garlic error-propagation rules (`G0.01` through
+`G0.07`). The first release runs only this rule family. Install a versioned
+release after the first Garlic tag that includes `cmd/garliclint`:
+
+```bash
+go install github.com/luanguimaraesla/garlic/cmd/garliclint@<tag>
+garliclint ./...
+```
+
+Use a pinned tag for CI, not `@latest`. Until a release contains the command,
+build or run it from the Garlic checkout. The command exits non-zero when it
+finds violations, so it can gate downstream CI. Copy or include
+[`garliclint/examples/Makefile.garlic-lint`](garliclint/examples/Makefile.garlic-lint)
+to install and run the pinned command from a Make target.
+
+Garlic runs this command as a non-blocking CI report while its existing findings
+are remediated. This does not change the non-zero exit behavior for downstream
+consumers. A golangci-lint adapter, `go vet -vettool`, and editor integrations
+are not part of this release.
+
+Methods that implement standard foreign interfaces such as `io.Reader` are
+excluded only for the matching interface method because callers rely on that
+raw error contract.

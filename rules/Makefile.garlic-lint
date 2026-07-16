@@ -1,0 +1,10 @@
+.PHONY: garliclint
+garliclint:
+	@echo "> Building garliclint"
+	$(GOBUILD) -o build/garliclint ./cmd/garliclint
+	@echo "> Running garliclint"
+	./build/garliclint ./...
+
+.PHONY: garliclint-smoke
+garliclint-smoke:
+	bash garliclint/scripts/downstream-smoke.sh

@@ -1,0 +1,3 @@
+package manuallogger
+
+func valid() {}

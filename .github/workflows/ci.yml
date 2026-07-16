@@ -70,6 +70,34 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+  garliclint:
+    name: Garliclint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+
+      # Make this gating after Garlic's existing findings are remediated.
+      - name: Report Garlic propagation findings
+        continue-on-error: true
+        run: make garliclint
+
+  garliclint-smoke:
+    name: Garliclint downstream smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+
+      - name: Verify downstream enforcement
+        run: make garliclint-smoke
+
   supply-chain:
     name: Supply chain · release age
     runs-on: ubuntu-latest
@@ -89,7 +117,7 @@ jobs:
 
   release:
     name: Release
-    needs: [lint, test, build, supply-chain]
+    needs: [lint, test, build, garliclint, garliclint-smoke, supply-chain]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
