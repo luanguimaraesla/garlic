@@ -1,6 +1,6 @@
 module github.com/luanguimaraesla/garlic
 
-go 1.25.11
+go 1.25.12
 
 require (
 	github.com/go-chi/chi/v5 v5.2.5
@@ -18,7 +18,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.44.0
 	go.opentelemetry.io/proto/otlp v1.10.0
 	go.uber.org/zap v1.27.1
-	golang.org/x/crypto v0.51.0
+	golang.org/x/crypto v0.52.0
 	golang.org/x/tools v0.44.0
 	google.golang.org/grpc v1.81.1
 	gopkg.in/yaml.v3 v3.0.1
