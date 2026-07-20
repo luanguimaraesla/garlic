@@ -705,7 +705,16 @@ garliclint ./...
 
 Use a pinned tag for CI, not `@latest`. Until a release contains the command,
 build or run it from the Garlic checkout. The command exits non-zero when it
-finds violations, so it can gate downstream CI. Copy or include
+finds violations, so it can gate downstream CI.
+
+Garliclint analyzes Go test files by default. To exclude `_test.go` files, opt
+in with `-test=false`:
+
+```bash
+garliclint -test=false ./...
+```
+
+Copy or include
 [`garliclint/examples/Makefile.garlic-lint`](garliclint/examples/Makefile.garlic-lint)
 to install and run the pinned command from a Make target. Its default artifacts
 are version-qualified under `.tools/`, so changing `GARLIC_VERSION` installs
