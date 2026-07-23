@@ -693,10 +693,12 @@ make cover/html                  # Open the HTML coverage report
 
 ### Garliclint
 
-`garliclint` checks these Garlic error-propagation rules: `G0.01`, `G0.02`,
-`G0.04`, `G0.06`, and `G0.07`. The first release runs only this rule family.
-Install a versioned release after the first Garlic tag that includes
-`cmd/garliclint`:
+`garliclint` ships exactly five propagation rules: `G0.01`, `G0.02`, `G0.04`,
+`G0.06`, and `G0.07`. Other implemented rules, including `G0.05`, are not part
+of this release. Constructor identity is resolved at the call site, so
+assigning `errors.Propagate` to a function value and calling that value is
+still reported. Install a versioned release after the first Garlic tag that
+includes `cmd/garliclint`:
 
 ```bash
 go install github.com/luanguimaraesla/garlic/cmd/garliclint@<tag>

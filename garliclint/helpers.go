@@ -69,6 +69,10 @@ func callObject(info *types.Info, expr ast.Expr) *types.Func {
 	return fn
 }
 
+// isGarlicConstructor resolves constructor identity at the call site from the
+// used *types.Func, so binding a constructor to a function value
+// (p := errors.Propagate; p(err, ...)) is not recognized and such returns are
+// still reported by design.
 func isGarlicConstructor(call *ast.CallExpr, info *types.Info) bool {
 	fn := callObject(info, call.Fun)
 	if fn == nil || fn.Pkg() == nil || fn.Pkg().Path() != garlicErrorsPath {
