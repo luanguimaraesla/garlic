@@ -3,6 +3,10 @@
 package garliclint
 
 import (
+	"go/parser"
+	"go/token"
+	"os"
+	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
@@ -49,4 +53,54 @@ func TestManualWriteError(t *testing.T) {
 
 func TestUnitTestTag(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), UnitTestTagAnalyzer, "unittesttag")
+}
+
+// TestUnitTestTagUnitBuild runs the analyzer with the unit tag set so
+// b_test.go loads and exercises hasUnitBuildTag's compliant branch. The
+// GoFiles assertion makes the tag propagation self-verifying: if GOFLAGS
+// ever stops reaching the analysistest loader, this test fails loudly
+// instead of silently testing nothing.
+func TestUnitTestTagUnitBuild(t *testing.T) {
+	t.Setenv("GOFLAGS", strings.TrimSpace(os.Getenv("GOFLAGS")+" -tags=unit"))
+	results := analysistest.Run(t, analysistest.TestData(), UnitTestTagAnalyzer, "unittesttag")
+	for _, result := range results {
+		for _, file := range result.Action.Package.GoFiles {
+			if strings.HasSuffix(file, "b_test.go") {
+				return
+			}
+		}
+	}
+	t.Fatal("b_test.go was not loaded; -tags=unit did not reach the analysistest loader")
+}
+
+func TestHasUnitBuildTag(t *testing.T) {
+	cases := []struct {
+		name       string
+		constraint string
+		want       bool
+	}{
+		{"unit", "//go:build unit", true},
+		{"negated unit", "//go:build !unit", false},
+		{"unittest token", "//go:build unittest", false},
+		{"unrelated tag", "//go:build integration", false},
+		{"unit or integration", "//go:build unit || integration", true},
+		{"unit and not race", "//go:build unit && !race", true},
+		{"no constraint", "", false},
+		{"malformed", "//go:build (unit", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "package p\n"
+			if tc.constraint != "" {
+				src = tc.constraint + "\n\n" + src
+			}
+			file, err := parser.ParseFile(token.NewFileSet(), "x_test.go", src, parser.ParseComments)
+			if err != nil {
+				t.Fatalf("failed to parse source: %v", err)
+			}
+			if got := hasUnitBuildTag(file); got != tc.want {
+				t.Errorf("hasUnitBuildTag(%q) = %v, want %v", tc.constraint, got, tc.want)
+			}
+		})
+	}
 }
