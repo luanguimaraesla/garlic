@@ -109,6 +109,11 @@ func TestHasUnitBuildTag(t *testing.T) {
 		{"unrelated tag", "//go:build integration", false},
 		{"unit or integration", "//go:build unit || integration", true},
 		{"unit and not race", "//go:build unit && !race", true},
+		{"unit and goos", "//go:build unit && linux", true},
+		{"unit and go release", "//go:build unit && go1.24", true},
+		{"unit and goos group", "//go:build unit && (linux || darwin)", true},
+		{"goos alone", "//go:build linux", false},
+		{"negated integration", "//go:build !integration", false},
 		{"no constraint", "", false},
 		{"malformed", "//go:build (unit", false},
 	}
