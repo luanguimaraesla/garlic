@@ -1,3 +1,9 @@
+# GO-2026-5932 affects golang.org/x/crypto/openpgp, which garlic does not
+# import (govulncheck reports no affected symbols), and no fixed upstream
+# release exists, so module-level scanning flags every x/crypto version.
+# ignoreUntil is machine-enforced by osv-scanner: re-review the assumption
+# above by the expiry.
 [[IgnoredVulns]]
 id = "GO-2026-5932"
 reason = "The affected openpgp package is not imported; govulncheck reports no affected symbols or imported packages."
+ignoreUntil = 2027-01-22T00:00:00Z
