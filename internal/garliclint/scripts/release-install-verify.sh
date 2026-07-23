@@ -12,7 +12,11 @@ snippet="$repo_root/internal/garliclint/examples/Makefile.garlic-lint"
 
 raw_version="${GARLIC_VERSION:-}"
 version="v${raw_version#v}"
-if ! printf '%s\n' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+# The whitespace test rejects multiline values that would sneak a valid
+# first line past a line-oriented grep and inject extra directives into
+# the generated go.mod; grep -x then anchors the full remaining value.
+if [ "$version" != "$(printf '%s' "$version" | tr -d '[:space:]')" ] ||
+	! printf '%s' "$version" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+'; then
 	echo "GARLIC_VERSION must be a pinned vX.Y.Z tag (got '$raw_version')" >&2
 	exit 1
 fi
@@ -126,7 +130,7 @@ if [ "$violating_status" -eq 0 ]; then
 	echo "FAIL: violation: pinned garliclint exited zero on a bare tuple return" >&2
 	exit 1
 fi
-if ! grep -q '\[G0.01\]' "$violating_output"; then
+if ! grep -q '\[G0\.01\]' "$violating_output"; then
 	echo "FAIL: violation: non-zero exit without a G0.01 finding" >&2
 	exit 1
 fi

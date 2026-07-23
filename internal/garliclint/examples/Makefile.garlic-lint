@@ -16,7 +16,8 @@ ifeq ($(_GARLICLINT_USE_DEFAULT),true)
 # installs and runs a separate artifact.
 garliclint-install:
 	@set -eu; \
-	printf '%s\n' "$$GARLIC_VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "GARLIC_VERSION must be a pinned vX.Y.Z tag" >&2; exit 1; }; \
+	test "$$GARLIC_VERSION" = "$$(printf '%s' "$$GARLIC_VERSION" | tr -d '[:space:]')" || { echo "GARLIC_VERSION must be a pinned vX.Y.Z tag" >&2; exit 1; }; \
+	printf '%s' "$$GARLIC_VERSION" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+' || { echo "GARLIC_VERSION must be a pinned vX.Y.Z tag" >&2; exit 1; }; \
 	tools_dir="$$GARLICLINT_TOOLS_DIR"; \
 	test -n "$$tools_dir" || { echo "GARLICLINT_TOOLS_DIR must not be empty" >&2; exit 1; }; \
 	mkdir -p "$$tools_dir"; \
