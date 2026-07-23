@@ -22,7 +22,7 @@ go 1.25.11
 
 require github.com/luanguimaraesla/garlic v0.0.0
 
-replace github.com/luanguimaraesla/garlic => $repo_root
+replace github.com/luanguimaraesla/garlic => "$repo_root"
 EOF
 cat > "$tmpdir/downstream/violating/main.go" <<'EOF'
 package violating
