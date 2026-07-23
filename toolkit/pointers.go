@@ -8,7 +8,7 @@ func IsValueNil(i interface{}) bool {
 	}
 	value := reflect.ValueOf(i)
 	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Map, reflect.Ptr, reflect.Slice:
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Slice:
 		return value.IsNil()
 	}
 	return false

@@ -31,7 +31,7 @@ func ExtractFilters(input interface{}) []*Filter {
 	val := reflect.ValueOf(input)
 
 	// If the input is a pointer, make sure it isn't nil and then dereference it.
-	if val.Kind() == reflect.Ptr {
+	if val.Kind() == reflect.Pointer {
 		if val.IsNil() {
 			return []*Filter{}
 		}
@@ -59,7 +59,7 @@ func ExtractFilters(input interface{}) []*Filter {
 		fieldValue := val.Field(i)
 
 		// Enforce that the field must be a pointer.
-		if fieldValue.Kind() != reflect.Ptr {
+		if fieldValue.Kind() != reflect.Pointer {
 			panic(fmt.Sprintf("field %q is tagged with filter but is not a pointer", field.Name))
 		}
 

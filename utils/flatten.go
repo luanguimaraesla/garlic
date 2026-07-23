@@ -11,7 +11,7 @@ func flattenStruct(i interface{}, parents []string) map[string]interface{} {
 	val := reflect.ValueOf(i)
 	typ := reflect.TypeOf(i)
 
-	if val.Kind() == reflect.Ptr {
+	if val.Kind() == reflect.Pointer {
 		val = val.Elem()
 		typ = typ.Elem()
 	}
@@ -29,7 +29,7 @@ func flattenStruct(i interface{}, parents []string) map[string]interface{} {
 		squash := tag == ",squash" || strings.HasPrefix(tag, ",")
 
 		fieldValue := val.Field(i)
-		if fieldValue.Kind() == reflect.Ptr {
+		if fieldValue.Kind() == reflect.Pointer {
 			fieldValue = fieldValue.Elem()
 		}
 
