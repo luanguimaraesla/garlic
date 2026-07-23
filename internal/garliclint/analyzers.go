@@ -7,9 +7,10 @@ func DefaultAnalyzers() []*analysis.Analyzer {
 	return []*analysis.Analyzer{PropagationAnalyzer}
 }
 
-// New returns all Garlic convention analyzers. Configuration is reserved for
-// future rule-level configuration.
-func New(_ any) ([]*analysis.Analyzer, error) {
+// AllAnalyzers returns the full registry of implemented analyzers, for future
+// in-module integrations and for widening DefaultAnalyzers, which stays the
+// shipped set.
+func AllAnalyzers() []*analysis.Analyzer {
 	return []*analysis.Analyzer{
 		PropagationAnalyzer,
 		StdlibErrorsAnalyzer,
@@ -20,5 +21,5 @@ func New(_ any) ([]*analysis.Analyzer, error) {
 		RawValidatorAnalyzer,
 		ManualWriteErrorAnalyzer,
 		UnitTestTagAnalyzer,
-	}, nil
+	}
 }

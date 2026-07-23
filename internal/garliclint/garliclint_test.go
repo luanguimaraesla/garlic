@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 
@@ -20,6 +21,29 @@ func TestDefaultAnalyzers(t *testing.T) {
 	analyzers := DefaultAnalyzers()
 	if len(analyzers) != 1 || analyzers[0] != PropagationAnalyzer {
 		t.Fatalf("DefaultAnalyzers() = %v, want only PropagationAnalyzer", analyzers)
+	}
+}
+
+func TestAllAnalyzers(t *testing.T) {
+	want := []*analysis.Analyzer{
+		PropagationAnalyzer,
+		StdlibErrorsAnalyzer,
+		EctxParamAnalyzer,
+		ZapErrorAnalyzer,
+		ManualLoggerAnalyzer,
+		ManualTxAnalyzer,
+		RawValidatorAnalyzer,
+		ManualWriteErrorAnalyzer,
+		UnitTestTagAnalyzer,
+	}
+	analyzers := AllAnalyzers()
+	if len(analyzers) != len(want) {
+		t.Fatalf("AllAnalyzers() returned %d analyzers, want %d", len(analyzers), len(want))
+	}
+	for i, a := range analyzers {
+		if a != want[i] {
+			t.Errorf("AllAnalyzers()[%d] = %v, want %v", i, a.Name, want[i].Name)
+		}
 	}
 }
 
