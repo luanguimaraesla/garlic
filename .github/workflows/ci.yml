@@ -80,10 +80,11 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # Make this gating after Garlic's existing findings are remediated.
+      # Diagnostics are expected while the in-repo findings are remediated
+      # (#21); garliclint-report fails only on abnormal analyzer exits
+      # (load errors, panics).
       - name: Report Garlic propagation findings
-        continue-on-error: true
-        run: make garliclint
+        run: make garliclint-report
 
   garliclint-smoke:
     name: Garliclint downstream smoke
