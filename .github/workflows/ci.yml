@@ -126,6 +126,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      version: ${{ steps.semrel.outputs.version }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -136,7 +138,32 @@ jobs:
           go-version-file: go.mod
 
       - uses: go-semantic-release/action@2e9dc4247a6004f8377781bef4cb9dad273a741f # v1
+        id: semrel
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           allow-initial-development-releases: true
           force-bump-patch-version: true
+
+  # Tags cut with the workflow's own GITHUB_TOKEN do not trigger other
+  # workflows, so post-release verification must chain off the release job.
+  # It runs after the release exists: a failure alerts on main without
+  # blocking the release. Pull requests skip the release job, and the
+  # version guard skips pushes that produce no release.
+  verify-release-install:
+    name: Verify tagged install
+    needs: [release]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.release.outputs.version != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+
+      - name: Verify tagged install
+        env:
+          GARLIC_VERSION: ${{ needs.release.outputs.version }}
+        run: bash internal/garliclint/scripts/release-install-verify.sh
