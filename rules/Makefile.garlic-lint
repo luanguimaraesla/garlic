@@ -8,8 +8,8 @@ garliclint:
 
 .PHONY: garliclint-smoke
 garliclint-smoke:
-	bash garliclint/scripts/downstream-smoke.sh
+	bash internal/garliclint/scripts/downstream-smoke.sh
 
 .PHONY: garliclint-makefile-security-test
 garliclint-makefile-security-test:
-	bash garliclint/scripts/downstream-makefile-security-test.sh
+	bash internal/garliclint/scripts/downstream-makefile-security-test.sh

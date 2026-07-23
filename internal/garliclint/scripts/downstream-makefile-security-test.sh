@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-snippet="$repo_root/garliclint/examples/Makefile.garlic-lint"
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+snippet="$repo_root/internal/garliclint/examples/Makefile.garlic-lint"
 tmpdir=$(mktemp -d)
 
 cleanup() {

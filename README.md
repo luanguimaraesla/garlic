@@ -717,7 +717,7 @@ garliclint -test=false ./...
 ```
 
 Copy or include
-[`garliclint/examples/Makefile.garlic-lint`](garliclint/examples/Makefile.garlic-lint)
+[`internal/garliclint/examples/Makefile.garlic-lint`](internal/garliclint/examples/Makefile.garlic-lint)
 to install and run the pinned command from a Make target. Its default artifacts
 are version-qualified under `.tools/`, so changing `GARLIC_VERSION` installs
 and executes that version. `GARLIC_VERSION` must be a pinned `vX.Y.Z` tag. Set

@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/tools/go/analysis/multichecker"
 
-	"github.com/luanguimaraesla/garlic/garliclint"
+	"github.com/luanguimaraesla/garlic/internal/garliclint"
 )
 
 var version = "dev"
