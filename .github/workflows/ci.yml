@@ -98,6 +98,9 @@ jobs:
       - name: Verify downstream enforcement
         run: make garliclint-smoke
 
+      - name: Verify downstream Makefile security
+        run: make garliclint-makefile-security-test
+
   supply-chain:
     name: Supply chain · release age
     runs-on: ubuntu-latest
