@@ -6,12 +6,9 @@ garliclint:
 	@echo "> Running garliclint"
 	./build/garliclint ./...
 
-# CI report mode. The multichecker binary exits 0 with no findings, 3 when
-# diagnostics were reported, 1 on load or internal errors, 2 on usage errors,
-# and above 128 on a signal or panic. This target passes on 0 (clean; the
-# expected end state after remediation) and 3 (findings printed, report-only
-# while remediation is tracked) and fails on anything else, so an analyzer
-# crash cannot hide behind expected diagnostics.
+# CI report mode: passes on binary exit 0 (clean) and 3 (findings reported),
+# fails on anything else (1 load or internal error, 2 usage, above 128 signal
+# or panic), so an analyzer crash cannot hide behind expected diagnostics.
 .PHONY: garliclint-report
 garliclint-report:
 	@echo "> Building garliclint"

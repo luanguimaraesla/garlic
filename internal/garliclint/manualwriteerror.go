@@ -34,8 +34,8 @@ func runManualWriteError(pass *analysis.Pass) (any, error) {
 // checkHandlerBody reports manual error writes inside a handler body,
 // descending into nested non-handler function literals: a closure that
 // captures the handler's ResponseWriter is still the handler's code
-// path. Handler-shaped literals are the only boundary, because the file
-// walk in runManualWriteError gives each of them its own walk.
+// path. Handler-shaped literals are skipped; the file walk evaluates
+// each of them independently.
 func checkHandlerBody(pass *analysis.Pass, body *ast.BlockStmt) {
 	for _, stmt := range body.List {
 		ast.Inspect(stmt, func(inner ast.Node) bool {

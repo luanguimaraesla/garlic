@@ -7,9 +7,8 @@ func DefaultAnalyzers() []*analysis.Analyzer {
 	return []*analysis.Analyzer{PropagationAnalyzer}
 }
 
-// AllAnalyzers returns the full registry of implemented analyzers, for future
-// in-module integrations and for widening DefaultAnalyzers, which stays the
-// shipped set.
+// AllAnalyzers returns every implemented analyzer, including those outside
+// the shipped DefaultAnalyzers set.
 func AllAnalyzers() []*analysis.Analyzer {
 	return []*analysis.Analyzer{
 		PropagationAnalyzer,

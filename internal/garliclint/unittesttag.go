@@ -22,20 +22,14 @@ func runUnitTestTag(pass *analysis.Pass) (any, error) {
 
 // hasUnitBuildTag reports whether the file counts as unit-tagged: its
 // //go:build constraint must be satisfiable under -tags=unit and
-// unsatisfiable without it. Platform tokens (GOOS, GOARCH, go1.N
-// release tags, and the implicit unix/cgo tokens) vary by toolchain, so
-// each side is sampled under two uniform assignments, all platform
-// tokens true and all platform tokens false, and the results are ORed.
-// Non-platform tokens other than unit (race, custom tags) stay false.
-// Under these semantics //go:build unit && linux and unit && !windows
-// count as tagged, //go:build linux alone does not, and a
-// unit-independent constraint such as //go:build !integration or
-// unit || !linux does not (the file builds in a plain `go test` run
-// without the tag). Sampling only the two uniform assignments means a
-// conjunction mixing positive and negated platform tokens, like
-// unit && linux && !windows, is still misclassified; exact per-token
-// enumeration is not worth the cost. Malformed expressions and legacy
-// // +build lines do not count as tagged.
+// unsatisfiable without it. Platform tokens (GOOS, GOARCH, go1.N, and
+// the implicit unix/cgo tokens) vary by toolchain, so each side is
+// sampled under the two uniform platform assignments (all true, all
+// false) and the results ORed; non-platform tokens other than unit
+// stay false. The sampling misclassifies conjunctions mixing positive
+// and negated platform tokens (unit && linux && !windows); exact
+// per-token enumeration is not worth the cost. Malformed expressions
+// and legacy // +build lines do not count as tagged.
 func hasUnitBuildTag(file *ast.File) bool {
 	for _, group := range file.Comments {
 		if group.End() > file.Package {
