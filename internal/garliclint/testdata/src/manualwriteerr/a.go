@@ -20,3 +20,18 @@ func register(routes map[string]func(http.ResponseWriter, *http.Request) error) 
 		return nil
 	}
 }
+
+func closureHelper(w http.ResponseWriter, r *http.Request) error {
+	fail := func(msg string) {
+		http.Error(w, msg, http.StatusInternalServerError) // want "\\[G6.01\\]"
+	}
+	fail("boom")
+	return nil
+}
+
+func deferredClosure(w http.ResponseWriter, r *http.Request) error {
+	defer func() {
+		http.Error(w, "deferred", http.StatusInternalServerError) // want "\\[G6.01\\]"
+	}()
+	return nil
+}

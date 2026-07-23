@@ -31,15 +31,17 @@ func runManualWriteError(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// checkHandlerBody reports manual error writes directly inside a handler
-// body, stopping at nested function boundaries: the file walk in
-// runManualWriteError evaluates each nested function on its own merits.
+// checkHandlerBody reports manual error writes inside a handler body,
+// descending into nested non-handler function literals: a closure that
+// captures the handler's ResponseWriter is still the handler's code
+// path. Handler-shaped literals are the only boundary, because the file
+// walk in runManualWriteError gives each of them its own walk.
 func checkHandlerBody(pass *analysis.Pass, body *ast.BlockStmt) {
 	for _, stmt := range body.List {
 		ast.Inspect(stmt, func(inner ast.Node) bool {
 			switch inner := inner.(type) {
-			case *ast.FuncDecl, *ast.FuncLit:
-				return false
+			case *ast.FuncLit:
+				return !isHandler(inner.Type, pass.TypesInfo)
 			case *ast.CallExpr:
 				if objectName(pass.TypesInfo, inner.Fun) == "net/http.Error" {
 					report(pass, inner.Pos(), "G6.01", "error response written manually via http.Error: return the error and let the route wrapper write it")
