@@ -1,0 +1,31 @@
+.PHONY: garliclint
+garliclint:
+	@echo "> Building garliclint"
+	mkdir -p build
+	$(GOBUILD) -o build/garliclint ./cmd/garliclint
+	@echo "> Running garliclint"
+	./build/garliclint ./...
+
+# CI report mode: passes on binary exit 0 (clean) and 3 (findings reported),
+# fails on anything else (1 load or internal error, 2 usage, above 128 signal
+# or panic), so an analyzer crash cannot hide behind expected diagnostics.
+.PHONY: garliclint-report
+garliclint-report:
+	@echo "> Building garliclint"
+	mkdir -p build
+	$(GOBUILD) -o build/garliclint ./cmd/garliclint
+	@echo "> Running garliclint (report mode)"
+	status=0; ./build/garliclint ./... || status=$$?; \
+	if [ "$$status" -eq 0 ] || [ "$$status" -eq 3 ]; then \
+		exit 0; \
+	fi; \
+	echo "garliclint exited $$status (analyzer crash or load error)" >&2; \
+	exit "$$status"
+
+.PHONY: garliclint-smoke
+garliclint-smoke:
+	bash internal/garliclint/scripts/downstream-smoke.sh
+
+.PHONY: garliclint-makefile-security-test
+garliclint-makefile-security-test:
+	bash internal/garliclint/scripts/downstream-makefile-security-test.sh

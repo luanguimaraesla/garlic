@@ -1,0 +1,53 @@
+# Set this to the first Garlic release that includes cmd/garliclint.
+GARLIC_VERSION ?=
+GARLICLINT_TOOLS_DIR ?= $(CURDIR)/.tools
+# Set this only to run an existing checkout-testing binary without installing.
+ifeq ($(origin GARLICLINT_BIN),undefined)
+_GARLICLINT_USE_DEFAULT := true
+else
+_GARLICLINT_USE_DEFAULT := false
+endif
+
+export GARLIC_VERSION GARLICLINT_TOOLS_DIR GARLICLINT_BIN
+
+.PHONY: garliclint-install
+ifeq ($(_GARLICLINT_USE_DEFAULT),true)
+# The default binary name is version-qualified, so changing GARLIC_VERSION
+# installs and runs a separate artifact.
+garliclint-install:
+	@set -eu; \
+	test "$$GARLIC_VERSION" = "$$(printf '%s' "$$GARLIC_VERSION" | tr -d '[:space:]')" || { echo "GARLIC_VERSION must be a pinned vX.Y.Z tag" >&2; exit 1; }; \
+	printf '%s' "$$GARLIC_VERSION" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+' || { echo "GARLIC_VERSION must be a pinned vX.Y.Z tag" >&2; exit 1; }; \
+	tools_dir="$$GARLICLINT_TOOLS_DIR"; \
+	test -n "$$tools_dir" || { echo "GARLICLINT_TOOLS_DIR must not be empty" >&2; exit 1; }; \
+	mkdir -p "$$tools_dir"; \
+	tools_dir=$$(cd "$$tools_dir" && pwd -P); \
+	artifact="$$tools_dir/garliclint-$$GARLIC_VERSION"; \
+	if test -x "$$artifact"; then exit 0; fi; \
+	GOBIN="$$tools_dir" go install "github.com/luanguimaraesla/garlic/cmd/garliclint@$$GARLIC_VERSION" && \
+		mv "$$tools_dir/garliclint" "$$artifact"
+else
+# An explicit binary is a checkout-testing override and is never installed.
+garliclint-install:
+	@:
+endif
+
+.PHONY: garliclint
+garliclint: garliclint-install
+ifeq ($(_GARLICLINT_USE_DEFAULT),true)
+	@set -eu; \
+	tools_dir="$$GARLICLINT_TOOLS_DIR"; \
+	test -n "$$tools_dir" || { echo "GARLICLINT_TOOLS_DIR must not be empty" >&2; exit 1; }; \
+	tools_dir=$$(cd "$$tools_dir" && pwd -P); \
+	exec "$$tools_dir/garliclint-$$GARLIC_VERSION" ./...
+else
+	@set -eu; \
+	bin="$$GARLICLINT_BIN"; \
+	test -n "$$bin" || { echo "GARLICLINT_BIN must name an existing executable" >&2; exit 1; }; \
+	case "$$bin" in \
+		/*) resolved_bin="$$bin" ;; \
+		*) resolved_bin="$$(pwd -P)/$$bin" ;; \
+	esac; \
+	test -x "$$resolved_bin" || { echo "GARLICLINT_BIN must name an existing executable" >&2; exit 1; }; \
+	exec "$$resolved_bin" ./...
+endif

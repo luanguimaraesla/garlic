@@ -128,7 +128,7 @@ func (s *StoreMock) Get(modelRef interface{}, query string, args ...interface{})
 	}
 
 	v := reflect.ValueOf(modelRef)
-	if v.Kind() != reflect.Ptr {
+	if v.Kind() != reflect.Pointer {
 		return errors.New("must pass a pointer, not a value, to StructScan destination")
 	}
 	if v.IsNil() {
@@ -148,7 +148,7 @@ func (s *StoreMock) Select(modelRef interface{}, query string, args ...interface
 	}
 
 	v := reflect.ValueOf(modelRef)
-	if v.Kind() != reflect.Ptr {
+	if v.Kind() != reflect.Pointer {
 		return errors.New("must pass a pointer, not a value, to Select destination")
 	}
 	if v.IsNil() {

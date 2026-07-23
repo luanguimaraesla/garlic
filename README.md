@@ -690,3 +690,48 @@ make fix                         # Run goimports, go mod tidy, and vendoring
 make cover                       # Show the text coverage report
 make cover/html                  # Open the HTML coverage report
 ```
+
+### Garliclint
+
+`garliclint` ships exactly five propagation rules: `G0.01`, `G0.02`, `G0.04`,
+`G0.06`, and `G0.07`. Other implemented rules, including `G0.05`, are not part
+of this release. Constructor identity is resolved at the call site, so
+assigning `errors.Propagate` to a function value and calling that value is
+still reported. Install a versioned release after the first Garlic tag that
+includes `cmd/garliclint`:
+
+```bash
+go install github.com/luanguimaraesla/garlic/cmd/garliclint@<tag>
+garliclint ./...
+```
+
+Use a pinned tag for CI, not `@latest`. Until a release contains the command,
+build or run it from the Garlic checkout. The command exits non-zero when it
+finds violations, so it can gate downstream CI.
+
+Garliclint analyzes Go test files by default. To exclude `_test.go` files, opt
+in with `-test=false`:
+
+```bash
+garliclint -test=false ./...
+```
+
+Copy or include
+[`internal/garliclint/examples/Makefile.garlic-lint`](internal/garliclint/examples/Makefile.garlic-lint)
+to install and run the pinned command from a Make target. Its default artifacts
+are version-qualified under `.tools/`, so changing `GARLIC_VERSION` installs
+and executes that version. `GARLIC_VERSION` must be a pinned `vX.Y.Z` tag. Set
+`GARLICLINT_BIN` only for checkout testing; it must name an existing executable
+and skips installation. Relative overrides, including `garliclint`, resolve
+from the invoking directory rather than `PATH`. Local checkout builds report
+`dev`; installed builds report their embedded module version when Go provides
+one.
+
+Garlic runs this command as a non-blocking CI report while its existing findings
+are remediated. This does not change the non-zero exit behavior for downstream
+consumers. A golangci-lint adapter, `go vet -vettool`, and editor integrations
+are not part of this release.
+
+Methods that implement standard foreign interfaces such as `io.Reader` are
+excluded only for the matching interface method because callers rely on that
+raw error contract.

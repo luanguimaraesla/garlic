@@ -40,7 +40,7 @@ func NamedResourceBindings(resource any) []string {
 
 func ResourceIter(resource any) func(func(string, any) bool) {
 	v := reflect.ValueOf(resource)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.Elem().Kind() == reflect.Struct {
 			v = v.Elem() // Dereference the pointer to get the struct
 		} else {
@@ -59,7 +59,7 @@ func ResourceIter(resource any) func(func(string, any) bool) {
 				continue // Skip fields without db tags
 			}
 
-			if value.Kind() == reflect.Ptr {
+			if value.Kind() == reflect.Pointer {
 				if value.IsNil() {
 					continue // Skip nil pointers, it means user didn't provide a value for this field
 				}
