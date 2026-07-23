@@ -58,6 +58,16 @@ func naked(err error) (result error) { // want "\\[G0.01\\]"
 	return
 }
 
+func nakedNil() (n int, err error) {
+	n = 1
+	return
+}
+
+func nakedAddress(capture func(*error)) (err error) { // want "\\[G0.01\\]"
+	capture(&err)
+	return
+}
+
 func tupleHelper() (int, error) {
 	return 0, nil
 }

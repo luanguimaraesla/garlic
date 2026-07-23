@@ -50,11 +50,14 @@ func checkPropagationFunction(pass *analysis.Pass, signature *ast.FuncType, body
 		if !ok {
 			return true
 		}
-		for _, expr := range errorReturnExpressions(ret, signature, pass.TypesInfo) {
+		for _, expr := range errorReturnExpressions(ret, signature, body, pass.TypesInfo) {
 			if isNil(expr) {
 				continue
 			}
 			if call, ok := expr.(*ast.CallExpr); ok && isGarlicConstructor(call, pass.TypesInfo) {
+				continue
+			}
+			if ident, ok := expr.(*ast.Ident); ok && isPropagatedIdent(pass.TypesInfo, body, ident) {
 				continue
 			}
 			if isClassificationCall(expr, pass.TypesInfo) {
@@ -66,6 +69,17 @@ func checkPropagationFunction(pass *analysis.Pass, signature *ast.FuncType, body
 		return true
 	})
 	checkLogThenReturn(pass, body)
+}
+
+func isPropagatedIdent(info *types.Info, body *ast.BlockStmt, ident *ast.Ident) bool {
+	obj := info.Uses[ident]
+	if obj == nil {
+		obj = info.Defs[ident]
+	}
+	if obj == nil {
+		return false
+	}
+	return isPropagatedVar(body, obj, info)
 }
 
 func isClassificationCall(expr ast.Expr, info *types.Info) bool {
@@ -120,7 +134,7 @@ func checkLogThenReturn(pass *analysis.Pass, body *ast.BlockStmt) {
 		if !ok || block.Body == nil {
 			continue
 		}
-		var logged string
+		var logged types.Object
 		for _, stmt := range block.Body.List {
 			ast.Inspect(stmt, func(node ast.Node) bool {
 				call, ok := node.(*ast.CallExpr)
@@ -130,17 +144,21 @@ func checkLogThenReturn(pass *analysis.Pass, body *ast.BlockStmt) {
 				for _, arg := range call.Args {
 					if field, ok := arg.(*ast.CallExpr); ok && (objectName(pass.TypesInfo, field.Fun) == garlicErrorsPath+".Zap" || objectName(pass.TypesInfo, field.Fun) == "go.uber.org/zap.Error") && len(field.Args) == 1 {
 						if ident, ok := field.Args[0].(*ast.Ident); ok {
-							logged = ident.Name
+							if obj := pass.TypesInfo.Uses[ident]; obj != nil {
+								logged = obj
+							}
 						}
 					}
 				}
 				return true
 			})
-			if ret, ok := stmt.(*ast.ReturnStmt); ok && logged != "" {
+			if ret, ok := stmt.(*ast.ReturnStmt); ok && logged != nil {
 				for _, expr := range ret.Results {
-					if ident, ok := expr.(*ast.Ident); ok && ident.Name == logged {
-						report(pass, expr.Pos(), "G0.07", "error logged then returned unpropagated: propagate first so the log includes the full reverse trace")
+					ident, ok := expr.(*ast.Ident)
+					if !ok || pass.TypesInfo.Uses[ident] != logged || isPropagatedVar(body, logged, pass.TypesInfo) {
+						continue
 					}
+					report(pass, expr.Pos(), "G0.07", "error logged then returned unpropagated: propagate first so the log includes the full reverse trace")
 				}
 			}
 		}

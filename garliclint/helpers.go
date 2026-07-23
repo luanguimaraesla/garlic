@@ -110,7 +110,7 @@ func isErrorType(t types.Type) bool {
 		return false
 	}
 	errorType := types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
-	return types.Implements(t, errorType) || types.Implements(types.NewPointer(t), errorType)
+	return types.Implements(t, errorType)
 }
 
 func returnsError(fn *ast.FuncType, info *types.Info) bool {
@@ -125,12 +125,12 @@ func returnsError(fn *ast.FuncType, info *types.Info) bool {
 	return false
 }
 
-func errorReturnExpressions(ret *ast.ReturnStmt, fn *ast.FuncType, info *types.Info) []ast.Expr {
+func errorReturnExpressions(ret *ast.ReturnStmt, fn *ast.FuncType, body *ast.BlockStmt, info *types.Info) []ast.Expr {
 	if fn.Results == nil {
 		return nil
 	}
 	if len(ret.Results) == 0 {
-		return namedErrorResults(fn, info)
+		return namedErrorResults(fn, body, info)
 	}
 
 	resultTypes := declaredResultTypes(fn, info)
@@ -181,17 +181,97 @@ func tupleErrorReturnExpression(result ast.Expr, resultTypes []types.Type, info 
 	return nil
 }
 
-func namedErrorResults(fn *ast.FuncType, info *types.Info) []ast.Expr {
+func namedErrorResults(fn *ast.FuncType, body *ast.BlockStmt, info *types.Info) []ast.Expr {
 	var expressions []ast.Expr
 	for _, field := range fn.Results.List {
 		if !isErrorType(info.TypeOf(field.Type)) {
 			continue
 		}
 		for _, name := range field.Names {
+			if obj := info.Defs[name]; obj != nil && neverAssigned(body, obj, info) {
+				continue
+			}
 			expressions = append(expressions, name)
 		}
 	}
 	return expressions
+}
+
+// assignedValues collects every expression assigned to obj within root,
+// including inside nested function literals (deferred closures can assign
+// named results). opaque marks assignment forms whose value cannot be
+// tracked (multi-value assignments, address-taking, range bindings);
+// callers must treat opaque objects as holding anything.
+func assignedValues(root ast.Node, obj types.Object, info *types.Info) (values []ast.Expr, opaque bool) {
+	ast.Inspect(root, func(node ast.Node) bool {
+		switch node := node.(type) {
+		case *ast.AssignStmt:
+			if len(node.Lhs) == len(node.Rhs) {
+				for i, lhs := range node.Lhs {
+					if identObject(info, lhs) == obj {
+						values = append(values, node.Rhs[i])
+					}
+				}
+				return true
+			}
+			for _, lhs := range node.Lhs {
+				if identObject(info, lhs) == obj {
+					opaque = true
+				}
+			}
+		case *ast.ValueSpec:
+			for i, name := range node.Names {
+				if info.Defs[name] != obj {
+					continue
+				}
+				if len(node.Values) == len(node.Names) {
+					values = append(values, node.Values[i])
+				} else if len(node.Values) > 0 {
+					opaque = true
+				}
+			}
+		case *ast.UnaryExpr:
+			if node.Op == token.AND && identObject(info, node.X) == obj {
+				opaque = true
+			}
+		case *ast.RangeStmt:
+			if identObject(info, node.Key) == obj || identObject(info, node.Value) == obj {
+				opaque = true
+			}
+		}
+		return true
+	})
+	return values, opaque
+}
+
+func identObject(info *types.Info, expr ast.Expr) types.Object {
+	ident, ok := expr.(*ast.Ident)
+	if !ok {
+		return nil
+	}
+	if obj := info.Defs[ident]; obj != nil {
+		return obj
+	}
+	return info.Uses[ident]
+}
+
+func neverAssigned(root ast.Node, obj types.Object, info *types.Info) bool {
+	values, opaque := assignedValues(root, obj, info)
+	return len(values) == 0 && !opaque
+}
+
+func isPropagatedVar(root ast.Node, obj types.Object, info *types.Info) bool {
+	values, opaque := assignedValues(root, obj, info)
+	if opaque || len(values) == 0 {
+		return false
+	}
+	for _, value := range values {
+		call, ok := value.(*ast.CallExpr)
+		if !ok || !isGarlicConstructor(call, info) {
+			return false
+		}
+	}
+	return true
 }
 
 type foreignInterface struct {
@@ -390,8 +470,20 @@ func sameCanonicalMethodSignature(actual, expected *types.Func) bool {
 	if !ok || actualSignature.Variadic() != expectedSignature.Variadic() {
 		return false
 	}
-	return canonicalTypeString(actualSignature.Params()) == canonicalTypeString(expectedSignature.Params()) &&
-		canonicalTypeString(actualSignature.Results()) == canonicalTypeString(expectedSignature.Results())
+	return sameCanonicalTupleTypes(actualSignature.Params(), expectedSignature.Params()) &&
+		sameCanonicalTupleTypes(actualSignature.Results(), expectedSignature.Results())
+}
+
+func sameCanonicalTupleTypes(first, second *types.Tuple) bool {
+	if first.Len() != second.Len() {
+		return false
+	}
+	for i := range first.Len() {
+		if canonicalTypeString(first.At(i).Type()) != canonicalTypeString(second.At(i).Type()) {
+			return false
+		}
+	}
+	return true
 }
 
 func canonicalTypeString(t types.Type) string {

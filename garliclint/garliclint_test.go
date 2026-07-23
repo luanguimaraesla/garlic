@@ -9,7 +9,7 @@ import (
 )
 
 func TestPropagation(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), PropagationAnalyzer, "propagation")
+	analysistest.Run(t, analysistest.TestData(), PropagationAnalyzer, "propagation", "propagationfallback")
 }
 
 func TestDefaultAnalyzers(t *testing.T) {
