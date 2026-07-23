@@ -78,7 +78,7 @@ violating_status=$?
 set -e
 
 cat "$violating_output"
-if ! grep -q '\[G0.01\]' "$violating_output"; then
+if ! grep -q '\[G0\.01\]' "$violating_output"; then
 	echo "garliclint did not report G0.01 for a tuple return" >&2
 	exit 1
 fi
@@ -97,7 +97,7 @@ testonly_status=$?
 set -e
 
 cat "$testonly_output"
-if ! grep -q '\[G0.01\]' "$testonly_output"; then
+if ! grep -q '\[G0\.01\]' "$testonly_output"; then
 	echo "garliclint did not report G0.01 for a test-file violation" >&2
 	exit 1
 fi
@@ -131,7 +131,7 @@ violating_excluded_status=$?
 set -e
 
 cat "$violating_excluded_output"
-if ! grep -q '\[G0.01\]' "$violating_excluded_output"; then
+if ! grep -q '\[G0\.01\]' "$violating_excluded_output"; then
 	echo "garliclint did not report G0.01 for a non-test violation with -test=false" >&2
 	exit 1
 fi
