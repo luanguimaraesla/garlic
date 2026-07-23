@@ -18,7 +18,7 @@ mkdir -p "$tmpdir/downstream/violating" "$tmpdir/downstream/testonly" "$tmpdir/d
 cat > "$tmpdir/downstream/go.mod" <<EOF
 module example.com/downstream
 
-go 1.25.11
+go 1.25.12
 
 require github.com/luanguimaraesla/garlic v0.0.0
 
