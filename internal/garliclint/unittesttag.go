@@ -21,16 +21,21 @@ func runUnitTestTag(pass *analysis.Pass) (any, error) {
 }
 
 // hasUnitBuildTag reports whether the file counts as unit-tagged: its
-// //go:build constraint must be satisfied under -tags=unit and must NOT
-// be satisfied without it. Platform tokens (GOOS, GOARCH, go1.N release
-// tags) are treated as implicitly satisfiable on both sides, so forms
-// like //go:build unit && linux or unit && go1.24 count as tagged while
-// //go:build linux alone does not. A negated unit constraint and
-// unrelated tokens like unittest are rejected, and a unit-independent
-// constraint such as //go:build !integration is satisfied with or
-// without -tags=unit, so it correctly does not count as tagged (the file
-// builds in a plain `go test` run without the tag). Malformed
-// expressions and legacy // +build lines do not count as tagged.
+// //go:build constraint must be satisfiable under -tags=unit and
+// unsatisfiable without it. Platform tokens (GOOS, GOARCH, go1.N
+// release tags, and the implicit unix/cgo tokens) vary by toolchain, so
+// each side is sampled under two uniform assignments, all platform
+// tokens true and all platform tokens false, and the results are ORed.
+// Non-platform tokens other than unit (race, custom tags) stay false.
+// Under these semantics //go:build unit && linux and unit && !windows
+// count as tagged, //go:build linux alone does not, and a
+// unit-independent constraint such as //go:build !integration or
+// unit || !linux does not (the file builds in a plain `go test` run
+// without the tag). Sampling only the two uniform assignments means a
+// conjunction mixing positive and negated platform tokens, like
+// unit && linux && !windows, is still misclassified; exact per-token
+// enumeration is not worth the cost. Malformed expressions and legacy
+// // +build lines do not count as tagged.
 func hasUnitBuildTag(file *ast.File) bool {
 	for _, group := range file.Comments {
 		if group.End() > file.Package {
@@ -44,8 +49,10 @@ func hasUnitBuildTag(file *ast.File) bool {
 			if err != nil {
 				continue
 			}
-			withUnit := expr.Eval(func(tag string) bool { return tag == "unit" || knownPlatformTag(tag) })
-			withoutUnit := expr.Eval(knownPlatformTag)
+			withUnit := expr.Eval(func(tag string) bool { return tag == "unit" || knownPlatformTag(tag) }) ||
+				expr.Eval(func(tag string) bool { return tag == "unit" })
+			withoutUnit := expr.Eval(knownPlatformTag) ||
+				expr.Eval(func(string) bool { return false })
 			if withUnit && !withoutUnit {
 				return true
 			}
@@ -72,8 +79,15 @@ var knownGOARCH = map[string]bool{
 	"s390x": true, "wasm": true,
 }
 
+// knownImplicitTag holds constraint tokens the toolchain satisfies
+// implicitly without being GOOS/GOARCH values: unix (any POSIX GOOS
+// since Go 1.19) and cgo.
+var knownImplicitTag = map[string]bool{
+	"unix": true, "cgo": true,
+}
+
 var goReleaseTag = regexp.MustCompile(`^go1\.[0-9]+$`)
 
 func knownPlatformTag(tag string) bool {
-	return knownGOOS[tag] || knownGOARCH[tag] || goReleaseTag.MatchString(tag)
+	return knownGOOS[tag] || knownGOARCH[tag] || knownImplicitTag[tag] || goReleaseTag.MatchString(tag)
 }
