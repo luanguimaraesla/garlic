@@ -1,7 +1,6 @@
 package garliclint
 
 import (
-	"go/ast"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -25,5 +24,3 @@ func runStdlibErrors(pass *analysis.Pass) (any, error) {
 	}
 	return nil, nil
 }
-
-var _ ast.Node
