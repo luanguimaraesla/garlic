@@ -2,6 +2,7 @@ package garliclint
 
 import (
 	"go/ast"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -21,18 +22,36 @@ func runManualTx(pass *analysis.Pass) (any, error) {
 			if !ok {
 				return true
 			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok {
+			fn := callObject(pass.TypesInfo, call.Fun)
+			if fn == nil {
 				return true
 			}
-			switch sel.Sel.Name {
+			switch fn.Name() {
 			case "BeginTx", "BeginTxx", "Begin", "Commit", "Rollback":
-				report(pass, call.Pos(), "G3.01", "manual transaction call: use storer.Transaction(ctx, fn)")
+				if isTransactionPackage(receiverPackagePath(fn)) {
+					report(pass, call.Pos(), "G3.01", "manual transaction call: use storer.Transaction(ctx, fn)")
+				}
 			}
 			return true
 		})
 	}
 	return nil, nil
+}
+
+var transactionPackageRoots = []string{
+	"database/sql",
+	"github.com/jmoiron/sqlx",
+	"github.com/jackc/pgx",
+	"github.com/luanguimaraesla/garlic/database",
+}
+
+func isTransactionPackage(path string) bool {
+	for _, root := range transactionPackageRoots {
+		if path == root || strings.HasPrefix(path, root+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func importsDatabase(file *ast.File) bool {

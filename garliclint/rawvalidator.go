@@ -2,6 +2,8 @@ package garliclint
 
 import (
 	"go/ast"
+	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -19,11 +21,18 @@ func runRawValidator(pass *analysis.Pass) (any, error) {
 				return true
 			}
 			assign, ok := ifStmt.Init.(*ast.AssignStmt)
-			if !ok || len(assign.Lhs) == 0 || len(assign.Rhs) != 1 || !isValidatorCall(assign.Rhs[0]) {
+			if !ok || len(assign.Lhs) == 0 || len(assign.Rhs) != 1 || !isValidatorCall(pass.TypesInfo, assign.Rhs[0]) {
 				return true
 			}
 			errName, ok := assign.Lhs[len(assign.Lhs)-1].(*ast.Ident)
 			if !ok {
+				return true
+			}
+			errObj := pass.TypesInfo.Defs[errName]
+			if errObj == nil {
+				errObj = pass.TypesInfo.Uses[errName]
+			}
+			if errObj == nil {
 				return true
 			}
 			ast.Inspect(ifStmt.Body, func(inner ast.Node) bool {
@@ -32,7 +41,7 @@ func runRawValidator(pass *analysis.Pass) (any, error) {
 					return true
 				}
 				for _, expr := range ret.Results {
-					if ident, ok := expr.(*ast.Ident); ok && ident.Name == errName.Name {
+					if ident, ok := expr.(*ast.Ident); ok && pass.TypesInfo.Uses[ident] == errObj {
 						report(pass, ident.Pos(), "G5.01", "raw validator error returned: wrap with validator.ParseValidationErrors(err)")
 					}
 				}
@@ -44,18 +53,24 @@ func runRawValidator(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-func isValidatorCall(expr ast.Expr) bool {
+func isValidatorCall(info *types.Info, expr ast.Expr) bool {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
 		return false
 	}
-	sel, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok {
+	fn := callObject(info, call.Fun)
+	if fn == nil {
 		return false
 	}
-	switch sel.Sel.Name {
+	switch fn.Name() {
 	case "Struct", "StructCtx", "Var", "VarWithValidation":
-		return true
+		return isValidatorPackage(receiverPackagePath(fn))
 	}
 	return false
+}
+
+func isValidatorPackage(path string) bool {
+	return path == "github.com/luanguimaraesla/garlic/validator" ||
+		path == "github.com/go-playground/validator" ||
+		strings.HasPrefix(path, "github.com/go-playground/validator/")
 }

@@ -14,3 +14,8 @@ func valid(w http.ResponseWriter, r *http.Request) error {
 	rest.WriteMessage(http.StatusOK, "ok").Must(w)
 	return nil
 }
+
+func writeUnavailable(w http.ResponseWriter, code int) error {
+	http.Error(w, "unavailable", code)
+	return nil
+}

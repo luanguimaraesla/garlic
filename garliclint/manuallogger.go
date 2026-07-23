@@ -21,13 +21,11 @@ func runManualLogger(pass *analysis.Pass) (any, error) {
 			if !ok {
 				return true
 			}
-			if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-				switch sel.Sel.Name {
-				case "NewProduction", "NewDevelopment", "NewExample", "NewNop":
-					if objectName(pass.TypesInfo, call.Fun) != "" {
-						report(pass, call.Pos(), "G2.03", "logger created manually: use Garlic logging helpers")
-					}
-				}
+			switch objectName(pass.TypesInfo, call.Fun) {
+			case "go.uber.org/zap.New", "go.uber.org/zap.NewProduction",
+				"go.uber.org/zap.NewDevelopment", "go.uber.org/zap.NewExample",
+				"go.uber.org/zap.NewNop":
+				report(pass, call.Pos(), "G2.03", "logger created manually: use Garlic logging helpers")
 			}
 			return true
 		})

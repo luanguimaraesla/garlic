@@ -105,6 +105,22 @@ func receiverTypeName(fn *types.Func) string {
 	return named.Obj().Name()
 }
 
+func receiverPackagePath(fn *types.Func) string {
+	signature, ok := fn.Type().(*types.Signature)
+	if !ok || signature.Recv() == nil {
+		return ""
+	}
+	receiver := types.Unalias(signature.Recv().Type())
+	if pointer, ok := receiver.(*types.Pointer); ok {
+		receiver = types.Unalias(pointer.Elem())
+	}
+	named, ok := receiver.(*types.Named)
+	if !ok || named.Obj().Pkg() == nil {
+		return ""
+	}
+	return named.Obj().Pkg().Path()
+}
+
 func isErrorType(t types.Type) bool {
 	if t == nil {
 		return false
@@ -144,18 +160,34 @@ func errorReturnExpressions(ret *ast.ReturnStmt, fn *ast.FuncType, body *ast.Blo
 }
 
 func declaredResultTypes(fn *ast.FuncType, info *types.Info) []types.Type {
-	var resultTypes []types.Type
-	for _, field := range fn.Results.List {
-		resultType := info.TypeOf(field.Type)
+	return flattenedFieldTypes(fn.Results, info)
+}
+
+func flattenedFieldTypes(list *ast.FieldList, info *types.Info) []types.Type {
+	if list == nil {
+		return nil
+	}
+	var flattened []types.Type
+	for _, field := range list.List {
+		fieldType := info.TypeOf(field.Type)
 		count := len(field.Names)
 		if count == 0 {
 			count = 1
 		}
 		for range count {
-			resultTypes = append(resultTypes, resultType)
+			flattened = append(flattened, fieldType)
 		}
 	}
-	return resultTypes
+	return flattened
+}
+
+func isNamedType(t types.Type, path, name string) bool {
+	named, ok := types.Unalias(t).(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := named.Obj()
+	return obj.Pkg() != nil && obj.Pkg().Path() == path && obj.Name() == name
 }
 
 func explicitErrorReturnExpressions(results []ast.Expr, resultTypes []types.Type) []ast.Expr {

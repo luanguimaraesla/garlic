@@ -5,6 +5,7 @@ type Field struct{}
 type Logger struct{}
 
 func Error(error) Field                { return Field{} }
+func New(...any) *Logger               { return &Logger{} }
 func NewProduction() *Logger           { return &Logger{} }
 func NewDevelopment() *Logger          { return &Logger{} }
 func NewExample() *Logger              { return &Logger{} }

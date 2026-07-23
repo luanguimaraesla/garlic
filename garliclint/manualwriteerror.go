@@ -15,31 +15,54 @@ func runManualWriteError(pass *analysis.Pass) (any, error) {
 	}
 	for _, file := range pass.Files {
 		ast.Inspect(file, func(node ast.Node) bool {
-			fn, ok := node.(*ast.FuncDecl)
-			if !ok || !isHandler(fn.Type, pass.TypesInfo) || fn.Body == nil {
-				return true
+			switch node := node.(type) {
+			case *ast.FuncDecl:
+				if node.Body != nil && isHandler(node.Type, pass.TypesInfo) {
+					checkHandlerBody(pass, node.Body)
+				}
+			case *ast.FuncLit:
+				if isHandler(node.Type, pass.TypesInfo) {
+					checkHandlerBody(pass, node.Body)
+				}
 			}
-			ast.Inspect(fn.Body, func(inner ast.Node) bool {
-				call, ok := inner.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				if objectName(pass.TypesInfo, call.Fun) == "net/http.Error" {
-					report(pass, call.Pos(), "G6.01", "error response written manually via http.Error: return the error and let the route wrapper write it")
-				}
-				if isWriteErrorCall(call, pass.TypesInfo) {
-					report(pass, call.Pos(), "G6.06", "rest.WriteError called inside a handler: return the error only")
-				}
-				return true
-			})
 			return true
 		})
 	}
 	return nil, nil
 }
 
+// checkHandlerBody reports manual error writes directly inside a handler
+// body, stopping at nested function boundaries: the file walk in
+// runManualWriteError evaluates each nested function on its own merits.
+func checkHandlerBody(pass *analysis.Pass, body *ast.BlockStmt) {
+	for _, stmt := range body.List {
+		ast.Inspect(stmt, func(inner ast.Node) bool {
+			switch inner := inner.(type) {
+			case *ast.FuncDecl, *ast.FuncLit:
+				return false
+			case *ast.CallExpr:
+				if objectName(pass.TypesInfo, inner.Fun) == "net/http.Error" {
+					report(pass, inner.Pos(), "G6.01", "error response written manually via http.Error: return the error and let the route wrapper write it")
+				}
+				if isWriteErrorCall(inner, pass.TypesInfo) {
+					report(pass, inner.Pos(), "G6.06", "rest.WriteError called inside a handler: return the error only")
+				}
+			}
+			return true
+		})
+	}
+}
+
 func isHandler(fn *ast.FuncType, info *types.Info) bool {
-	return fn.Params != nil && len(fn.Params.List) == 2 && returnsError(fn, info)
+	if !returnsError(fn, info) {
+		return false
+	}
+	params := flattenedFieldTypes(fn.Params, info)
+	if len(params) != 2 || !isNamedType(params[0], "net/http", "ResponseWriter") {
+		return false
+	}
+	pointer, ok := types.Unalias(params[1]).(*types.Pointer)
+	return ok && isNamedType(pointer.Elem(), "net/http", "Request")
 }
 
 func isWriteErrorCall(call *ast.CallExpr, info *types.Info) bool {
