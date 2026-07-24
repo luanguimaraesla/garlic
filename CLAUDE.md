@@ -12,7 +12,7 @@ Garlic is an internal Go framework providing standardized utilities for building
 make test                        # Run all unit tests with coverage
 make GOTESTRUN=TestName test     # Run a specific test by name
 make lint                        # Run golangci-lint
-make fix                         # Format code (goimports) + tidy/vendor modules
+make fix                         # Format code (goimports) + tidy modules
 make build                       # Build binaries from cmd/ to build/
 make cover                       # Show text coverage report (run after test)
 make cover/html                  # Open HTML coverage report
@@ -44,7 +44,7 @@ The framework is organized as independent packages, each providing a specific co
 - **Singleton patterns:** logging, validator, and rest server use singleton/multiton initialization — call `Init()` or `GetServer()` before use.
 - **Error propagation:** Use `errors.Propagate(err)` or `errors.PropagateAs(err, kind)` rather than wrapping errors manually. Error kinds map to HTTP status codes automatically.
 - **Context injection:** Logger, tracing IDs, and other state flow through `context.Context` via middleware.
-- **Module mode:** Build uses `-mod=mod` (set in GOFLAGS). Dependencies are vendored (`vendor/` directory).
+- **Module mode:** Build uses `-mod=mod` (set in GOFLAGS).
 
 ## Agent Guidance
 

@@ -686,7 +686,7 @@ The skill activates when Claude Code detects Garlic imports in a project. Run
 make test                        # Run unit tests with coverage
 make GOTESTRUN=TestName test     # Run a specific unit test
 make lint                        # Run golangci-lint
-make fix                         # Run goimports, go mod tidy, and vendoring
+make fix                         # Run goimports and go mod tidy
 make cover                       # Show the text coverage report
 make cover/html                  # Open the HTML coverage report
 ```
