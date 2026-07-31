@@ -71,6 +71,18 @@ return errors.Propagate(helper(), "failed to run the helper", ectx)
 No option runs and no error is allocated on that path. A non-nil result is
 always backed by `*errors.ErrorT`.
 
+Upgrading requires you to audit propagation arguments that are not guaranteed to
+be non-nil: those calls now return nil instead of a constructed error, which
+turns a detected failure into a silent success. When a branch detects a failure
+that has no cause, build a fresh error with `errors.New`. `Database.Create` is
+the concrete example: its no-row branch reports an `INSERT` that returned
+nothing, so it creates a new system error instead of propagating a nil one.
+
+The `error` result type is a source-incompatible change to the v1 API. Code that
+previously assigned these results to an `*errors.ErrorT` variable, or read
+`Kind`, `Details`, or other concrete members directly, now recovers the concrete
+error with `errors.As` or `errors.AsKind`.
+
 - **NEVER** rely on nil handling for a typed nil. A `(*errors.ErrorT)(nil)`
   stored in an `error` is not equal to nil, and garlic neither detects nor
   normalizes it. Return a genuine nil `error` instead of a nil concrete pointer.

@@ -15,10 +15,7 @@ import (
 	"github.com/luanguimaraesla/garlic/errors"
 )
 
-// The fake driver below answers every query with an empty result set, which is
-// the only database behaviour this regression needs. It runs entirely in
-// process: no socket, no credentials, no external SQL.
-
+// noRowsConnector returns empty result sets without opening external connections.
 type noRowsConnector struct{}
 
 func (noRowsConnector) Connect(context.Context) (driver.Conn, error) { return noRowsConn{}, nil }

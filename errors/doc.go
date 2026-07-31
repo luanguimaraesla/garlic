@@ -85,6 +85,14 @@
 // as a (*ErrorT)(nil) returned as error, is not equal to nil and is neither
 // detected nor normalized.
 //
+// Upgrading requires you to audit propagation arguments that are not guaranteed
+// to be non-nil: those calls now return nil instead of a constructed error,
+// which turns a detected failure into a silent success. When a branch detects a
+// failure that has no cause, build a fresh error with [New]. Database.Create in
+// the database package is the concrete example: its no-row branch reports an
+// INSERT that returned nothing, so it creates a new system error instead of
+// propagating a nil one.
+//
 // The error result type is a source-incompatible change to the v1 API. Code that
 // previously assigned these results to an *ErrorT variable, or read Kind,
 // Details, or other concrete members directly, now recovers the concrete error
