@@ -488,6 +488,7 @@ func (r *Request) doWithRetry(ctx context.Context, httpReq *http.Request, replay
 		l.Warn("retrying request", zap.Int("attempt", attempt+1), zap.Duration("wait", wait))
 
 		if !sleepCtx(ctx, wait) {
+			// sleepCtx returns false only when the context is done, so ctx.Err() is non-nil here.
 			return nil, errors.PropagateAs(errors.KindSystemError, ctx.Err(), "request cancelled during backoff")
 		}
 	}

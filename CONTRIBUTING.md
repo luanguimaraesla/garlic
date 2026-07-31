@@ -27,9 +27,11 @@ How the next version is chosen, configured in [`.semrelrc`](.semrelrc):
   the **major** version.
 
 The point of the `major!` gate is that breaking changes do not force a major on
-their own. A breaking change ships as a minor by default, and the major bump
-happens only when you deliberately ask for it with a `major!` commit. Call this
-out clearly in the release notes when a minor carries breaking changes.
+their own. An incompatible change follows its own commit type: a `fix` still
+ships as a patch and a `feat` still ships as a minor. The major bump happens
+only when you deliberately ask for it with a `major!` commit. Call this out
+clearly in the release notes whenever a `v1.x` release carries an incompatible
+change.
 
 ### Do not use `BREAKING CHANGE` footers
 

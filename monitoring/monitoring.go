@@ -76,6 +76,7 @@ var getInstruments = sync.OnceValues(func() (*instruments, error) {
 // logInstrumentError propagates and logs an instrument-construction failure.
 // It runs inside the sync.OnceValues body, so the failure is logged exactly
 // once rather than on every request.
+// Callers invoke logInstrumentError only after establishing that err is non-nil.
 func logInstrumentError(err error, name string) error {
 	gerr := errors.Propagate(err, "failed to create "+name)
 	logging.Global().Error("Failed to initialize HTTP metrics", errors.Zap(gerr))
