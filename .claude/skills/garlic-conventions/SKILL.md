@@ -56,6 +56,28 @@ loses this data silently.
   to the stdlib, so they also match foreign errors like `io.EOF` and
   `*http.MaxBytesError`).
 
+### Nil propagation
+
+`errors.Propagate`, `errors.PropagateAs`, `errors.From`, and
+`TemplateT.Propagate` return `error`, and they return `nil` when the error they
+receive is itself a nil error interface. Propagating the result of a call that
+succeeded is therefore safe and stays a success:
+
+```go
+// Returns nil when helper() succeeded.
+return errors.Propagate(helper(), "failed to run the helper", ectx)
+```
+
+No option runs and no error is allocated on that path. A non-nil result is
+always backed by `*errors.ErrorT`.
+
+- **NEVER** rely on nil handling for a typed nil. A `(*errors.ErrorT)(nil)`
+  stored in an `error` is not equal to nil, and garlic neither detects nor
+  normalizes it. Return a genuine nil `error` instead of a nil concrete pointer.
+- **NEVER** declare a propagation result as `*errors.ErrorT`. These functions
+  return `error`; recover the concrete value with `errors.As` or
+  `errors.AsKind` when you need `Kind`, `Details`, or troubleshooting data.
+
 ### The only exception: foreign interface contracts
 
 When a type implements an interface owned by the stdlib or a third party
@@ -162,6 +184,9 @@ if err := r.repo.ensureRecord(ctx, id); err != nil {
 - Use `errors.IsKind(err, kind)` for hierarchical kind checking. Checking
   `KindUserError` matches all subkinds (Validation, NotFound, Auth, etc.).
 - Use `errors.AsKind(err, kind)` to extract the first matching `*ErrorT`.
+- Use `errors.As(err, &e)` with `var e *errors.ErrorT` to recover the concrete
+  error regardless of kind. This is the way to read `Kind`, `Details`, or
+  troubleshooting data from a propagation result, which is typed as `error`.
 - **ALWAYS** propagate before logging. Call `errors.Propagate` (or
   `errors.PropagateAs`) first, then log the propagated error with
   `errors.Zap`. This ensures the log entry carries the full reverse trace

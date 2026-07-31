@@ -266,6 +266,24 @@ func (api *UserAPI) Read(w http.ResponseWriter, r *http.Request) error {
 }
 ```
 
+`Propagate`, `PropagateAs`, `From`, and `TemplateT.Propagate` return `error`.
+They return `nil` when the error they receive is itself a nil error interface,
+so propagating the result of a call that succeeded is safe:
+
+```go
+// Returns nil when helper() succeeded.
+return errors.Propagate(helper(), "failed to run the helper")
+```
+
+A non-nil result is always backed by `*errors.ErrorT`. A typed nil stored inside
+an error interface, such as a `(*ErrorT)(nil)` returned as `error`, is not equal
+to nil and is neither detected nor normalized.
+
+The `error` result type is a source-incompatible change to the v1 API. Code that
+previously assigned these results to an `*errors.ErrorT` variable, or read `Kind`,
+`Details`, or other concrete members directly, now recovers the concrete error
+with `errors.As` or `errors.AsKind` (see Inspecting errors below).
+
 ### Error context
 
 Build an error context once at the start of a service method. Reuse it for
@@ -342,6 +360,16 @@ if errors.IsKind(err, errors.KindUserError) {
 ```go
 if e, ok := errors.AsKind(err, errors.KindNotFoundError); ok {
     log.Println(e.Details)
+}
+```
+
+`As` recovers the concrete error regardless of kind, which is what propagation
+callers need when they want `Kind`, `Details`, or the troubleshooting data.
+
+```go
+var e *errors.ErrorT
+if errors.As(err, &e) {
+    log.Println(e.Kind().Name, e.Details)
 }
 ```
 

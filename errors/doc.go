@@ -68,7 +68,27 @@
 //
 //	err := errors.PropagateAs(errors.KindNotFoundError, sqlErr, "user not found")
 //
-// Both [New] and [Propagate] automatically capture a reverse trace entry.
+// [New] and every non-nil [Propagate] result automatically capture a reverse
+// trace entry.
+//
+// # Nil Propagation
+//
+// [Propagate], [PropagateAs], [From], and [TemplateT.Propagate] return error.
+// They return nil when the error they receive is itself a nil error interface,
+// so propagating a call that succeeded stays a success:
+//
+//	// Returns nil when helper() succeeded.
+//	return errors.Propagate(helper(), "failed to run the helper")
+//
+// No option runs and no error is allocated on that path. A non-nil result is
+// always backed by [ErrorT]. A typed nil stored inside an error interface, such
+// as a (*ErrorT)(nil) returned as error, is not equal to nil and is neither
+// detected nor normalized.
+//
+// The error result type is a source-incompatible change to the v1 API. Code that
+// previously assigned these results to an *ErrorT variable, or read Kind,
+// Details, or other concrete members directly, now recovers the concrete error
+// through [As] or [AsKind].
 //
 // # Options
 //
@@ -111,6 +131,13 @@
 //
 //	if e, ok := errors.AsKind(err, errors.KindInvalidRequestError); ok {
 //	    log.Println(e.Details)
+//	}
+//
+// [As] recovers the concrete error regardless of kind:
+//
+//	var e *errors.ErrorT
+//	if errors.As(err, &e) {
+//	    log.Println(e.Kind().Name, e.Details)
 //	}
 //
 // # Serialization

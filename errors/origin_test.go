@@ -233,7 +233,7 @@ func TestErrorT_Description(t *testing.T) {
 func TestOrigin_returnsUnderlyingError(t *testing.T) {
 	originErr := New(KindSystemError, "secret")
 	inner := Override(KindNotFoundError, originErr, "not found")
-	outer := Propagate(inner, "service failed")
+	outer := requireErrorT(t, Propagate(inner, "service failed"))
 
 	if outer.origin != nil {
 		t.Fatal("propagation should not set the origin on the outer error")
