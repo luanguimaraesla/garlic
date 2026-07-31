@@ -140,7 +140,7 @@ func (db *Database) Create(ctx context.Context, query string, resource any) erro
 			return errors.PropagateAs(errors.KindSystemError, err, "failed to scan returned resource", ectx)
 		}
 	} else {
-		return errors.PropagateAs(errors.KindSystemError, err, "no rows returned while scanning resource during creation", ectx)
+		return errors.New(errors.KindSystemError, "no rows returned while scanning resource during creation", ectx)
 	}
 
 	return nil

@@ -9,6 +9,84 @@ import (
 	"testing"
 )
 
+// trackingOpt counts how often it is applied, so a test can prove that a nil
+// input short-circuits before any option runs.
+type trackingOpt struct {
+	calls int
+}
+
+func (o *trackingOpt) Opt(*ErrorT) {
+	o.calls++
+}
+
+// requireNilError observes the result at the error interface boundary, so a
+// typed nil pointer returned as an error still fails.
+func requireNilError(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("expected a nil error interface, got %v of type %T", err, err)
+	}
+}
+
+// requireErrorT asserts the outer dynamic type instead of walking the chain, so
+// a result that only wraps an *ErrorT deeper down cannot pass by accident.
+func requireErrorT(t *testing.T, err error) *ErrorT {
+	t.Helper()
+	e, ok := err.(*ErrorT)
+	if !ok {
+		t.Fatalf("expected result of dynamic type *ErrorT, got %T", err)
+	}
+
+	return e
+}
+
+// --- nil input contract ---
+
+func TestPropagate_nilReturnsNil(t *testing.T) {
+	opt := &trackingOpt{}
+
+	requireNilError(t, Propagate(nil, "must not be built", opt))
+
+	if opt.calls != 0 {
+		t.Errorf("expected no option to run for a nil error, got %d calls", opt.calls)
+	}
+}
+
+func TestPropagateAs_nilReturnsNil(t *testing.T) {
+	opt := &trackingOpt{}
+
+	requireNilError(t, PropagateAs(KindSystemError, nil, "must not be built", opt))
+
+	if opt.calls != 0 {
+		t.Errorf("expected no option to run for a nil error, got %d calls", opt.calls)
+	}
+}
+
+func TestFrom_nilReturnsNil(t *testing.T) {
+	opt := &trackingOpt{}
+
+	requireNilError(t, From(KindError, nil, "no cause", opt))
+
+	if opt.calls != 0 {
+		t.Errorf("expected no option to run for a nil error, got %d calls", opt.calls)
+	}
+}
+
+func TestTemplate_propagateNilReturnsNil(t *testing.T) {
+	templateOpt := &trackingOpt{}
+	callerOpt := &trackingOpt{}
+	tmpl := Template(KindNotFoundError, "not found", templateOpt)
+
+	requireNilError(t, tmpl.Propagate(nil, callerOpt))
+
+	if templateOpt.calls != 0 {
+		t.Errorf("expected no template option to run for a nil error, got %d calls", templateOpt.calls)
+	}
+	if callerOpt.calls != 0 {
+		t.Errorf("expected no caller option to run for a nil error, got %d calls", callerOpt.calls)
+	}
+}
+
 // --- wrap() behavior ---
 
 func TestWrap_copiesDetailsFromWrappedError(t *testing.T) {
@@ -16,22 +94,36 @@ func TestWrap_copiesDetailsFromWrappedError(t *testing.T) {
 		Hint("check the ID"),
 	)
 
-	outer := Propagate(inner, "service failed")
+	outer := requireErrorT(t, Propagate(inner, "service failed"))
 	if outer.Details["hint"] != "check the ID" {
 		t.Errorf("expected hint to be copied from wrapped error, got %v", outer.Details["hint"])
 	}
 }
 
-func TestWrap_nilError_doesNotPanic(t *testing.T) {
-	e := From(KindError, nil, "no cause")
-	if e.cause != nil {
-		t.Error("expected nil cause")
+func TestFrom_nonNilPreservesConstruction(t *testing.T) {
+	cause := fmt.Errorf("root cause")
+	err := requireErrorT(t, From(KindNotFoundError, cause, "not found", Hint("check the ID")))
+
+	if err.Kind() != KindNotFoundError {
+		t.Errorf("kind: want NotFoundError, got %s", err.Kind().Name)
+	}
+	if err.message != "not found" {
+		t.Errorf("message: want 'not found', got %q", err.message)
+	}
+	if err.Unwrap() != cause {
+		t.Error("From should keep the exact cause")
+	}
+	if err.Details["hint"] != "check the ID" {
+		t.Errorf("hint: want 'check the ID', got %v", err.Details["hint"])
+	}
+	if len(err.Troubleshooting.ReverseTrace) != 0 {
+		t.Errorf("From should not append a reverse trace, got %v", err.Troubleshooting.ReverseTrace)
 	}
 }
 
 func TestWrap_stdlibError_doesNotCopyDetails(t *testing.T) {
 	stdErr := fmt.Errorf("stdlib error")
-	e := Propagate(stdErr, "wrapped")
+	e := requireErrorT(t, Propagate(stdErr, "wrapped"))
 	if len(e.Details) != 0 {
 		t.Errorf("expected empty Details when wrapping stdlib error, got %v", e.Details)
 	}
@@ -41,7 +133,7 @@ func TestWrap_stdlibError_doesNotCopyDetails(t *testing.T) {
 
 func TestPropagate_inheritsKindFromErrorT(t *testing.T) {
 	inner := New(KindNotFoundError, "not found")
-	outer := Propagate(inner, "service layer")
+	outer := requireErrorT(t, Propagate(inner, "service layer"))
 
 	if !outer.Kind().Is(KindNotFoundError) {
 		t.Errorf("expected NotFoundError kind, got %s", outer.Kind().Name)
@@ -49,7 +141,7 @@ func TestPropagate_inheritsKindFromErrorT(t *testing.T) {
 }
 
 func TestPropagate_defaultsToKindErrorForStdlib(t *testing.T) {
-	outer := Propagate(fmt.Errorf("raw"), "service layer")
+	outer := requireErrorT(t, Propagate(fmt.Errorf("raw"), "service layer"))
 
 	if outer.Kind() != KindError {
 		t.Errorf("expected KindError for stdlib error, got %s", outer.Kind().Name)
@@ -58,10 +150,67 @@ func TestPropagate_defaultsToKindErrorForStdlib(t *testing.T) {
 
 func TestPropagateAs_overridesKind(t *testing.T) {
 	inner := New(KindSystemError, "db down")
-	outer := PropagateAs(KindNotFoundError, inner, "not found")
+	outer := requireErrorT(t, PropagateAs(KindNotFoundError, inner, "not found"))
 
 	if !outer.Kind().Is(KindNotFoundError) {
 		t.Errorf("expected NotFoundError, got %s", outer.Kind().Name)
+	}
+}
+
+// Propagation must carry every piece of the inner error outward untouched and
+// add exactly one trace entry for the boundary it just crossed.
+func TestPropagate_nonNilPreservesMetadataAndTrace(t *testing.T) {
+	inner := New(KindNotFoundError, "record not found",
+		Hint("check the ID"),
+		Context(Field("resource_id", "abc")),
+		StackTrace(),
+	)
+	innerTrace := append([]string(nil), inner.Troubleshooting.ReverseTrace...)
+	innerStack := inner.Troubleshooting.StackTrace
+	if innerStack == "" {
+		t.Fatal("the seeded stack trace should not be empty")
+	}
+
+	outer := requireErrorT(t, Propagate(inner, "service failed"))
+
+	if outer.Kind() != KindNotFoundError {
+		t.Errorf("kind: want NotFoundError, got %s", outer.Kind().Name)
+	}
+	if outer.Unwrap() != error(inner) {
+		t.Error("propagation should keep the exact cause")
+	}
+	if outer.Details["hint"] != "check the ID" {
+		t.Errorf("details: want the inner hint, got %v", outer.Details["hint"])
+	}
+	if outer.Troubleshooting.StackTrace != innerStack {
+		t.Errorf("stack trace: want the inner stack trace, got %q", outer.Troubleshooting.StackTrace)
+	}
+
+	// Context is keyed by caller function name.
+	if len(outer.Troubleshooting.Context) != 1 {
+		t.Fatalf("troubleshooting context: want 1 caller entry, got %d", len(outer.Troubleshooting.Context))
+	}
+	for caller, ctx := range outer.Troubleshooting.Context {
+		fields, ok := ctx.(map[string]any)
+		if !ok {
+			t.Fatalf("troubleshooting context for %s: want map[string]any, got %T", caller, ctx)
+		}
+		if len(fields) != 1 {
+			t.Errorf("troubleshooting context for %s: want 1 field, got %v", caller, fields)
+		}
+		if fields["resource_id"] != "abc" {
+			t.Errorf("resource_id: want abc, got %v", fields["resource_id"])
+		}
+	}
+
+	trace := outer.Troubleshooting.ReverseTrace
+	if len(trace) != len(innerTrace)+1 {
+		t.Fatalf("reverse trace: want exactly one appended entry over %d, got %d", len(innerTrace), len(trace))
+	}
+	for i, want := range innerTrace {
+		if trace[i] != want {
+			t.Errorf("reverse trace entry %d: want %q, got %q", i, want, trace[i])
+		}
 	}
 }
 
@@ -79,7 +228,7 @@ func TestError_chainsMessages(t *testing.T) {
 
 func TestUnwrap_returnsCause(t *testing.T) {
 	cause := fmt.Errorf("root cause")
-	err := Propagate(cause, "wrapper")
+	err := requireErrorT(t, Propagate(cause, "wrapper"))
 
 	if err.Unwrap() != cause {
 		t.Error("Unwrap should return the cause")
@@ -177,7 +326,7 @@ func TestTemplate_propagatePreservesKind(t *testing.T) {
 	tmpl := Template(KindNotFoundError, "not found")
 	cause := fmt.Errorf("sql: no rows")
 
-	err := tmpl.Propagate(cause)
+	err := requireErrorT(t, tmpl.Propagate(cause))
 	if !IsKind(err, KindNotFoundError) {
 		t.Errorf("expected NotFoundError kind, got %s", err.Kind().Name)
 	}

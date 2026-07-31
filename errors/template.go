@@ -35,11 +35,15 @@ func (t *TemplateT) New(opts ...Opt) *ErrorT {
 	return New(t.kind, t.message, combined...)
 }
 
-// Propagate propagates an existing error with additional context provided by the template.
-// It combines the template's options with any additional options provided, allowing for
-// customization of the error propagation. This method returns a pointer to an ErrorT instance,
-// representing the propagated error with the specified kind, message, and options.
-func (t *TemplateT) Propagate(err error, opts ...Opt) *ErrorT {
+// Propagate propagates an existing error with the kind, message, and options of
+// the template. Caller options are applied after the template's, so they win on
+// conflict.
+//
+// When err is a nil error interface, Propagate returns nil and neither the
+// template nor the caller options run. A non-nil result is always backed by
+// *ErrorT. A typed nil stored inside an error interface is not nil and is not
+// normalized.
+func (t *TemplateT) Propagate(err error, opts ...Opt) error {
 	combined := make([]Opt, 0, len(t.opts)+len(opts))
 	combined = append(combined, t.opts...)
 	combined = append(combined, opts...)
