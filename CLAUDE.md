@@ -42,7 +42,7 @@ The framework is organized as independent packages, each providing a specific co
 
 - **Build tags:** Unit tests use `//go:build unit`. The `make test` target passes `-tags=unit` automatically.
 - **Singleton patterns:** logging, validator, and rest server use singleton/multiton initialization — call `Init()` or `GetServer()` before use.
-- **Error propagation:** Use `errors.Propagate(err)` or `errors.PropagateAs(err, kind)` rather than wrapping errors manually. Error kinds map to HTTP status codes automatically.
+- **Error propagation:** Use `errors.Propagate(err, message, opts...)` or `errors.PropagateAs(kind, err, message, opts...)` rather than wrapping errors manually. `PropagateAs` takes the kind first. Error kinds map to HTTP status codes automatically.
 - **Context injection:** Logger, tracing IDs, and other state flow through `context.Context` via middleware.
 - **Module mode:** Build uses `-mod=mod` (set in GOFLAGS).
 

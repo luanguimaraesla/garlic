@@ -21,7 +21,11 @@ func ExamplePropagate() {
 	cause := errors.New(errors.KindNotFoundError, "record missing")
 	err := errors.Propagate(cause, "failed to fetch user")
 	fmt.Println(err.Error())
-	fmt.Println(err.Kind().Name)
+
+	var e *errors.ErrorT
+	if errors.As(err, &e) {
+		fmt.Println(e.Kind().Name)
+	}
 	// Output:
 	// failed to fetch user: record missing
 	// NotFoundError
@@ -31,7 +35,11 @@ func ExamplePropagateAs() {
 	cause := fmt.Errorf("connection refused")
 	err := errors.PropagateAs(errors.KindSystemError, cause, "database unavailable")
 	fmt.Println(err.Error())
-	fmt.Println(err.Kind().StatusCode())
+
+	var e *errors.ErrorT
+	if errors.As(err, &e) {
+		fmt.Println(e.Kind().StatusCode())
+	}
 	// Output:
 	// database unavailable: connection refused
 	// 500

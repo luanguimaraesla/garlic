@@ -38,12 +38,20 @@ func newErrorT(kind *Kind, message string, origin error) *ErrorT {
 	}
 }
 
-// Propagate creates a new ErrorT instance with a default error kind (KindError),
-// a specified message, and additional options. It wraps an existing error with
-// this new instance, allowing for enhanced error tracking and debugging. This
-// function is useful for propagating errors while maintaining comprehensive
-// error context and metadata.
-func Propagate(err error, message string, opts ...Opt) *ErrorT {
+// Propagate wraps an existing error with a new message, inheriting the kind of
+// the wrapped error when it is an ErrorT and falling back to KindError
+// otherwise. It is the standard way to carry an error across a boundary while
+// keeping its context and metadata.
+//
+// When err is a nil error interface, Propagate returns nil without applying
+// options or capturing any propagation metadata, so a failure-free result stays
+// failure-free. A non-nil result is always backed by *ErrorT. A typed nil stored
+// inside an error interface is not nil and is not normalized.
+func Propagate(err error, message string, opts ...Opt) error {
+	if err == nil {
+		return nil
+	}
+
 	kind := KindError
 	if e, ok := err.(*ErrorT); ok {
 		kind = e.Kind()
@@ -52,12 +60,18 @@ func Propagate(err error, message string, opts ...Opt) *ErrorT {
 	return PropagateAs(kind, err, message, opts...)
 }
 
-// PropagateAs creates a new ErrorT instance with a specified error kind, message, and options,
-// and wraps an existing error with this new instance. It appends additional options for
-// reverse trace and stack trace to the provided options, ensuring that the error context
-// is enriched with detailed tracing information. This function is useful for propagating
-// errors with a specific kind while maintaining comprehensive error tracking and debugging capabilities.
-func PropagateAs(kind *Kind, err error, message string, opts ...Opt) *ErrorT {
+// PropagateAs wraps an existing error with an explicit kind and message,
+// appending a reverse trace entry so the propagation path stays visible.
+//
+// When err is a nil error interface, PropagateAs returns nil without applying
+// options or capturing a reverse trace. A non-nil result is always backed by
+// *ErrorT. A typed nil stored inside an error interface is not nil and is not
+// normalized.
+func PropagateAs(kind *Kind, err error, message string, opts ...Opt) error {
+	if err == nil {
+		return nil
+	}
+
 	opts = append(opts, RevTrace())
 	return From(kind, err, message, opts...)
 }
@@ -80,13 +94,18 @@ func Raw(kind *Kind, message string, opts ...Opt) *ErrorT {
 	return newErrorT(kind, message, nil).With(opts...)
 }
 
-// From creates a new ErrorT instance from an existing error, using the error's
-// message and kind (if available) as the basis for the new instance. It allows
-// for additional options to be specified, which are inserted into the new ErrorT
-// instance. This function is useful for converting standard errors into ErrorT
-// instances, enabling enhanced error tracking and handling with additional context
-// and metadata.
-func From(kind *Kind, err error, message string, opts ...Opt) *ErrorT {
+// From builds an error of the given kind that wraps err, carrying over the
+// details and troubleshooting data of an ErrorT cause. Unlike PropagateAs it
+// adds no reverse trace entry, so the caller controls the metadata through opts.
+//
+// When err is a nil error interface, From returns nil without allocating or
+// applying options. A non-nil result is always backed by *ErrorT. A typed nil
+// stored inside an error interface is not nil and is not normalized.
+func From(kind *Kind, err error, message string, opts ...Opt) error {
+	if err == nil {
+		return nil
+	}
+
 	return newErrorT(kind, message, nil).wrap(err).With(opts...)
 }
 

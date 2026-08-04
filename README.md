@@ -251,20 +251,51 @@ func (s *UserService) Get(ctx context.Context, id uuid.UUID) (*User, error) {
 
 // Handler layer: return errors, do not write failure responses directly.
 func (api *UserAPI) Read(w http.ResponseWriter, r *http.Request) error {
+    ectx := errors.Context(
+        errors.Field("route", "users.read"),
+    )
+
     id, err := request.ParseResourceUUID(r, "user_id")
     if err != nil {
-        return err
+        // Request helpers still need propagation at the handler
+        // boundary because it appends this caller to the reverse trace.
+        return errors.Propagate(err, "failed to parse user ID", ectx)
     }
 
     user, err := api.service.Get(r.Context(), id)
     if err != nil {
-        return errors.Propagate(err, "failed to read user")
+        return errors.Propagate(err, "failed to read user", ectx)
     }
 
     rest.WriteResponse(http.StatusOK, user).Must(w)
     return nil
 }
 ```
+
+`Propagate`, `PropagateAs`, `From`, and `TemplateT.Propagate` return `error`.
+They return `nil` when the error they receive is itself a nil error interface,
+so propagating the result of a call that succeeded is safe:
+
+```go
+// Returns nil when helper() succeeded.
+return errors.Propagate(helper(), "failed to run the helper")
+```
+
+A non-nil result is always backed by `*errors.ErrorT`. A typed nil stored inside
+an error interface, such as a `(*errors.ErrorT)(nil)` returned as `error`, is not
+equal to nil and is neither detected nor normalized.
+
+Upgrading requires you to audit propagation arguments that are not guaranteed to
+be non-nil: those calls now return nil instead of a constructed error, which
+turns a detected failure into a silent success. When a branch detects a failure
+that has no cause, build a fresh error with `errors.New`. `Database.Create` is
+the concrete example: its no-row branch reports an `INSERT` that returned
+nothing, so it creates a new system error instead of propagating a nil one.
+
+The `error` result type is a source-incompatible change to the v1 API. Code that
+previously assigned these results to an `*errors.ErrorT` variable, or read `Kind`,
+`Details`, or other concrete members directly, now recovers the concrete error
+with `errors.As` or `errors.AsKind` (see Inspecting errors below).
 
 ### Error context
 
@@ -342,6 +373,16 @@ if errors.IsKind(err, errors.KindUserError) {
 ```go
 if e, ok := errors.AsKind(err, errors.KindNotFoundError); ok {
     log.Println(e.Details)
+}
+```
+
+`As` recovers the concrete error regardless of kind, which is what propagation
+callers need when they want `Kind`, `Details`, or the troubleshooting data.
+
+```go
+var e *errors.ErrorT
+if errors.As(err, &e) {
+    log.Println(e.Kind().Name, e.Details)
 }
 ```
 
