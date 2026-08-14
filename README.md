@@ -285,17 +285,8 @@ A non-nil result is always backed by `*errors.ErrorT`. A typed nil stored inside
 an error interface, such as a `(*errors.ErrorT)(nil)` returned as `error`, is not
 equal to nil and is neither detected nor normalized.
 
-Upgrading requires you to audit propagation arguments that are not guaranteed to
-be non-nil: those calls now return nil instead of a constructed error, which
-turns a detected failure into a silent success. When a branch detects a failure
-that has no cause, build a fresh error with `errors.New`. `Database.Create` is
-the concrete example: its no-row branch reports an `INSERT` that returned
-nothing, so it creates a new system error instead of propagating a nil one.
-
-The `error` result type is a source-incompatible change to the v1 API. Code that
-previously assigned these results to an `*errors.ErrorT` variable, or read `Kind`,
-`Details`, or other concrete members directly, now recovers the concrete error
-with `errors.As` or `errors.AsKind` (see Inspecting errors below).
+Use `errors.As` or `errors.AsKind` when code needs `Kind`, `Details`, or other
+members of the concrete `*errors.ErrorT` (see Inspecting errors below).
 
 ### Error context
 
@@ -709,17 +700,23 @@ so chained calls keep satisfying the same interface.
 
 ## AI agent guidance
 
-Garlic ships a [Claude Code](https://claude.ai/code) skill that teaches agents
-the framework conventions: error propagation, context-based logging, middleware
-ordering, and the rest of Garlic's patterns. Projects that depend on Garlic can
-install it with [skills](https://github.com/vercel-labs/skills):
+Garlic ships two agent skills. `garlic-conventions` teaches the framework's
+steady-state patterns. `garlic-update` reads every generated GitHub release note
+between the installed and target versions, applies the documented migrations,
+and validates the updated project.
+
+Projects that depend on Garlic can install both with
+[skills](https://github.com/vercel-labs/skills):
 
 ```bash
-npx skills add luanguimaraesla/garlic -s garlic-conventions
+npx skills add luanguimaraesla/garlic \
+  -s garlic-conventions \
+  -s garlic-update
 ```
 
-The skill activates when Claude Code detects Garlic imports in a project. Run
-`npx skills check` after updating Garlic so agents pick up the latest guidance.
+The skills activate when an agent detects Garlic imports or receives an upgrade
+request. Run `npx skills update garlic-conventions garlic-update` to pick up the
+latest guidance.
 
 ## Development
 
