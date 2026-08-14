@@ -7,6 +7,12 @@
         "minor_release_rules": "feat",
         "patch_release_rules": "fix"
       }
+    },
+    "changelog-generator": {
+      "name": "default",
+      "options": {
+        "format_commit_template": "* {{with .Scope -}} **{{.}}:** {{end}} {{- .Message}} ({{trimSHA .SHA}}){{range $index, $line := .Raw}}{{if $index}}\n  {{$line}}{{end}}{{end}}"
+      }
     }
   }
 }

@@ -26,6 +26,18 @@ How the next version is chosen, configured in [`.semrelrc`](.semrelrc):
 - only a `major!` commit (for example `major!: drop the legacy client`) bumps
   the **major** version.
 
+### Release notes and upgrade guidance
+
+The generated GitHub release body is Garlic's changelog. The changelog includes
+each conventional commit's subject and body, so commit bodies must contain the
+context that users need after a release.
+
+Put release-specific migration steps under an `Upgrade notes:` paragraph in the
+commit body. Make each step concrete enough for a user or coding agent to apply
+without reconstructing the change from the diff. Keep steady-state API behavior
+in package documentation, the README, and `garlic-conventions`; do not turn that
+skill into a history of past migrations.
+
 The point of the `major!` gate is that breaking changes do not force a major on
 their own. An incompatible change follows its own commit type: a `fix` still
 ships as a patch and a `feat` still ships as a minor. The major bump happens
