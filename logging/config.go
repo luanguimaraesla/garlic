@@ -8,6 +8,7 @@ import (
 type Config struct {
 	Level         string         `json:"level" mapstructure:"level" yaml:"level"`
 	Encoding      string         `json:"encoding" mapstructure:"encoding" yaml:"encoding"`
+	OutputPaths   []string       `json:"output_paths" mapstructure:"output_paths" yaml:"output_paths"`
 	InitialFields map[string]any `json:"initial_fields" mapstructure:"initial_fields" yaml:"initial_fields"`
 }
 
@@ -15,6 +16,13 @@ func (c *Config) Parse() *zap.Config {
 	lvl, err := zap.ParseAtomicLevel(c.Level)
 	if err != nil {
 		panic(err)
+	}
+
+	// Zap discards normal records when no output path is set, so callers that
+	// omit the setting keep writing to stdout.
+	outputPaths := c.OutputPaths
+	if len(outputPaths) == 0 {
+		outputPaths = []string{"stdout"}
 	}
 
 	zapConfig := &zap.Config{
@@ -50,7 +58,7 @@ func (c *Config) Parse() *zap.Config {
 
 		// OutputPaths is a list of URLs or file paths to write logging output to.
 		// See Open for details.
-		OutputPaths: []string{"stdout"},
+		OutputPaths: outputPaths,
 		// ErrorOutputPaths is a list of URLs to write internal logger errors to.
 		// The default is standard error.
 		//
@@ -76,6 +84,7 @@ func Defaults() *Config {
 	return &Config{
 		Level:         "error",
 		Encoding:      "json",
+		OutputPaths:   []string{"stdout"},
 		InitialFields: map[string]any{},
 	}
 }

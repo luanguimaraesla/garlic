@@ -8,8 +8,9 @@ import (
 
 func ExampleInit() {
 	logging.Init(&logging.Config{
-		Level:    "info",
-		Encoding: "json",
+		Level:       "info",
+		Encoding:    "json",
+		OutputPaths: []string{"stderr"},
 	})
 
 	logger := logging.Global()
