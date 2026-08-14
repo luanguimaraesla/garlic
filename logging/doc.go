@@ -6,13 +6,18 @@
 // Call [Init] once at application startup to configure the global logger:
 //
 //	logging.Init(&logging.Config{
-//	    Level:    "info",
-//	    Encoding: "json",
+//	    Level:       "info",
+//	    Encoding:    "json",
+//	    OutputPaths: []string{"stderr"},
 //	})
 //
+// OutputPaths selects where normal records go, using the same URLs and file
+// paths zap accepts. Sending them to stderr leaves stdout free for a CLI's own
+// output. Omitting the field keeps writing to stdout.
+//
 // If [Init] is not called, [Global] lazily initializes the logger with
-// [Defaults] (level "error", encoding "json"). Calling [Init] more than once
-// panics.
+// [Defaults] (level "error", encoding "json", normal output to stdout).
+// Calling [Init] more than once panics.
 //
 // # Usage
 //
