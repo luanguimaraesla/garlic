@@ -18,4 +18,22 @@
 #
 # A short description of the convention belongs in any PR that touches this
 # file, so reviewers can confirm the exception is justified.
-exclude: []
+exclude:
+  - module: golang.org/x/mod
+    version: v0.40.0
+    reason: "Security hotfix for GO-2026-6179 and GO-2026-6180"
+    approved_by: "@luanguimaraesla"
+    added: 2026-08-19
+    expires: 2026-08-21
+  - module: golang.org/x/tools
+    version: v0.49.0
+    reason: "Required by the golang.org/x/mod v0.40.0 security hotfix"
+    approved_by: "@luanguimaraesla"
+    added: 2026-08-19
+    expires: 2026-08-21
+  - module: golang.org/x/net
+    version: v0.58.0
+    reason: "Required by the golang.org/x/mod v0.40.0 security hotfix"
+    approved_by: "@luanguimaraesla"
+    added: 2026-08-19
+    expires: 2026-08-21
