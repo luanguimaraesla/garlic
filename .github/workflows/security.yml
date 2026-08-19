@@ -63,11 +63,11 @@ jobs:
       contents: read
       actions: read
       security-events: write
-    # SHA-pinned to v2.3.8. The reusable workflow scans `-r ./` by default,
+    # SHA-pinned to v2.5.1. The reusable workflow scans `-r ./` by default,
     # picks up go.mod and go.sum, and fails the job on any vulnerability.
     # SARIF upload is off because GitHub Code Scanning is not configured
     # on this repository.
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
     with:
       upload-sarif: false
       fail-on-vuln: true
