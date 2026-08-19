@@ -57,7 +57,7 @@ mkdir -p "$downstream/violating" "$downstream/clean"
 cat > "$downstream/go.mod" <<EOF
 module example.com/downstream
 
-go 1.25.13
+go 1.26
 
 require github.com/luanguimaraesla/garlic $version
 EOF
