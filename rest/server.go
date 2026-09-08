@@ -43,6 +43,8 @@ type Server struct {
 
 func NewServer(name string, opts ...ServerOption) *Server {
 	router := chi.NewRouter()
+	router.NotFound(notFoundHandler)
+	router.MethodNotAllowed(methodNotAllowedHandler)
 
 	s := &Server{
 		Name:            name,
