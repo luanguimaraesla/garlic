@@ -29,6 +29,39 @@
 // callback invoked when shutdown begins; the provided context carries
 // the shutdown deadline so cleanup work can respect the same timeout.
 //
+// # Unrouted Requests
+//
+// [NewServer], and therefore [GetServer], installs default NotFound and
+// MethodNotAllowed handlers, so a request that matches no route gets the same
+// canonical error DTO as any other garlic failure instead of chi's bare text
+// page. Both write through [WriteError], with status 404 or 405 and a static
+// hint.
+//
+// chi drops its own Allow computation as soon as a custom MethodNotAllowed
+// handler is installed, and the method set it computed is unexported, so the 405
+// handler rebuilds the header: it probes the root router with the request's
+// root-level path, reconstructed from the mount patterns matched on the way in.
+// A probe that lands on the endpoint of a mount is followed into the router
+// mounted there, since chi answers those paths with a stub that accepts every
+// method before consulting what was mounted. The handler also reproduces chi's
+// treatment of a request method chi does not know, which is answered with a bare
+// 405 and no Allow at all, on an existing path as much as on a missing one. One
+// case cannot be reproduced: when a middleware inside a mounted router rewrites
+// the route path, the probe derives Allow from the rewritten tail, so methods
+// that only the original path could reach are missing from it.
+//
+// Both handlers can be replaced through Router().NotFound and
+// Router().MethodNotAllowed. chi copies the handlers into a sub-router at mount
+// time and afterwards skips sub-routers that already carry one, so install an
+// override before mounting if it should apply inside the mounts too; an override
+// installed after a Mount replaces the root behavior while that sub-router keeps
+// the garlic default.
+//
+// The handlers record no metrics of their own, because the monitoring middleware
+// already instruments unrouted requests. A router with no routes at all is the
+// exception: chi serves its NotFound directly, outside the middleware chain, so
+// neither logging nor metrics middleware runs there.
+//
 // # Routes
 //
 // Route builders ([Get], [Post], [Put], [Patch], [Delete]) accept handler
