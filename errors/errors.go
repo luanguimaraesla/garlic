@@ -22,6 +22,7 @@ type ErrorT struct {
 	message         string
 	cause           error
 	origin          error
+	statusCode      int
 	Details         map[string]any
 	Troubleshooting Troubleshooting
 }
@@ -161,6 +162,19 @@ func (e *ErrorT) Code() string {
 	return e.Kind().Code
 }
 
+// StatusCode returns the HTTP status this error reports: the exact code set
+// through the [Status] option when one was applied, and the status of the
+// error's kind otherwise. Use it when a status received from elsewhere must
+// survive verbatim, such as a non-standard 499 or 599 that KindForStatus can
+// only classify as its 4xx or 5xx class.
+func (e *ErrorT) StatusCode() int {
+	if e.statusCode > 0 {
+		return e.statusCode
+	}
+
+	return e.Kind().StatusCode()
+}
+
 // With applies opts to the error in place and returns it, so options can be
 // attached fluently after construction.
 func (e *ErrorT) With(opts ...Opt) *ErrorT {
@@ -184,6 +198,9 @@ func (e *ErrorT) wrap(other error) *ErrorT {
 	if o, ok := other.(*ErrorT); ok {
 		e.Details = o.Details
 		e.Troubleshooting = o.Troubleshooting
+		if e.statusCode == 0 {
+			e.statusCode = o.statusCode
+		}
 	}
 
 	e.cause = other
@@ -244,7 +261,7 @@ func (e *ErrorT) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddString("error", e.Error())
 	enc.AddString("code", e.kind.Code)
 	enc.AddString("kind", e.kind.FQN())
-	enc.AddInt("error_status_code", e.kind.StatusCode())
+	enc.AddInt("error_status_code", e.StatusCode())
 	_ = enc.AddReflected("details", e.Details)
 	_ = enc.AddReflected("troubleshooting", e.Troubleshooting)
 

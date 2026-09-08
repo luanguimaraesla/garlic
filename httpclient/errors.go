@@ -13,8 +13,9 @@ var (
 		Parent:      errors.KindSystemError,
 	}
 
-	// KindUnknownResponseError classifies error responses that are not valid
-	// garlic error DTOs.
+	// KindUnknownResponseError classifies a recognizable garlic error DTO whose
+	// kind is not registered in this program, which usually means the peer runs a
+	// garlic version or a kind set this one does not know.
 	KindUnknownResponseError = &errors.Kind{
 		Name:        "UnknownResponseError",
 		Code:        "C10003",

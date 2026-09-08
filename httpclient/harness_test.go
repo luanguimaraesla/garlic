@@ -59,6 +59,66 @@ func textResponse(status int, body string, header http.Header) *http.Response {
 	}
 }
 
+// recordingBody counts the bytes read and the Close calls, so a test can prove a
+// helper both drained and released the response body.
+type recordingBody struct {
+	io.Reader
+	read   int
+	closed int
+}
+
+func (b *recordingBody) Read(p []byte) (int, error) {
+	n, err := b.Reader.Read(p)
+	b.read += n
+
+	return n, err
+}
+
+func (b *recordingBody) Close() error {
+	b.closed++
+	return nil
+}
+
+// failingBody serves prefix and then fails, standing in for a body whose
+// transport dies halfway through.
+type failingBody struct {
+	prefix []byte
+	offset int
+	closed int
+}
+
+func (b *failingBody) Read(p []byte) (int, error) {
+	if b.offset >= len(b.prefix) {
+		return 0, io.ErrUnexpectedEOF
+	}
+
+	n := copy(p, b.prefix[b.offset:])
+	b.offset += n
+
+	return n, nil
+}
+
+func (b *failingBody) Close() error {
+	b.closed++
+	return nil
+}
+
+// errorResponse builds a Response around an arbitrary body, for tests that need
+// to control the body's read and close behavior.
+func errorResponse(status int, body io.ReadCloser, contentType string) *Response {
+	header := http.Header{}
+	if contentType != "" {
+		header.Set("Content-Type", contentType)
+	}
+
+	return &Response{Response: &http.Response{
+		StatusCode: status,
+		Status:     http.StatusText(status),
+		Header:     header,
+		Body:       body,
+	}}
+}
+
 // fastRetry returns a retry config with tiny waits so retry tests stay quick.
 func fastRetry(maxRetries int) RetryConfig {
 	return RetryConfig{
