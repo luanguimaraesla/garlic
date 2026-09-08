@@ -645,6 +645,16 @@ if resp.IsError() {
 }
 ```
 
+It never turns an upstream failure into a local parser error. A garlic DTO whose
+kind this program knows decodes as it was sent, extra fields from a newer garlic
+included, and reports the status of that kind, since the kind is what the peer
+meant. An unknown kind becomes an `UnknownResponseError` naming the code it
+received, which is how a version mismatch between services shows up. A proxy's
+HTML page, malformed JSON, or an empty body becomes an error of the kind for the
+upstream status. For all of those, `ErrorT.StatusCode` reports the exact status
+that arrived, including a non-standard `499` or `599`. The transport status is
+on `Response.StatusCode` in every case, and the body is drained and closed.
+
 The client also supports streaming uploads with explicit `Content-Length`, raw
 streaming downloads through the response body, pluggable auth through a
 `TokenSource`, custom transports, `http.RoundTripper`, before/after hooks, and

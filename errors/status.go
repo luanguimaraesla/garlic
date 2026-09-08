@@ -60,3 +60,28 @@ func KindForStatus(status int) *Kind {
 	}
 	return classForStatus(status)
 }
+
+type status struct {
+	code int
+}
+
+// Status pins the HTTP status an error reports through [ErrorT.StatusCode] to
+// an exact code, so a non-standard status such as 499 or 599 survives even
+// though [KindForStatus] can only classify it as its 4xx or 5xx class. It
+// changes nothing else: the kind, the wire DTO, and kind matching stay as they
+// were. A non-positive code is ignored.
+//
+// Propagation carries the override outward, so the exact status is still
+// readable after Propagate, PropagateAs, or From. A Status passed to the
+// wrapping call wins over the one carried from the cause.
+func Status(code int) *status {
+	return &status{code: code}
+}
+
+func (s *status) Opt(e *ErrorT) {
+	if s.code <= 0 {
+		return
+	}
+
+	e.statusCode = s.code
+}

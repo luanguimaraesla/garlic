@@ -96,6 +96,7 @@
 //   - [Context] captures debugging key-value pairs with automatic caller detection.
 //   - [RevTrace] appends a reverse trace entry (auto-added by [New] and [Propagate]).
 //   - [StackTrace] captures the full goroutine stack.
+//   - [Status] pins the HTTP status the error reports (see below).
 //   - [Template] creates a reusable error template (see [TemplateT]).
 //
 // Example with options:
@@ -105,6 +106,24 @@
 //	    errors.Context(errors.Field("key", cacheKey)),
 //	    errors.StackTrace(),
 //	)
+//
+// # Exact HTTP Statuses
+//
+// [ErrorT.StatusCode] is the status an error reports. It normally comes from the
+// error's kind, so nothing changes for an error built the usual way. [Status]
+// pins it to an exact code instead, which is what a status received from
+// elsewhere needs: [KindForStatus] can only classify a non-standard 499 or 599
+// as its 4xx or 5xx class, and the original code would otherwise be lost.
+//
+//	err := errors.New(errors.KindForStatus(499), "client closed the request",
+//	    errors.Status(499),
+//	)
+//	// errors.IsKind(err, errors.KindUserError) is true, StatusCode() is 499.
+//
+// The override changes nothing else: the kind, [Kind.StatusCode], the wire DTO,
+// and kind matching all stay as they were. Propagation carries it outward, so
+// the exact status survives [Propagate], [PropagateAs], and [From]; a [Status]
+// passed to the wrapping call wins over the one carried from the cause.
 //
 // # Templates
 //

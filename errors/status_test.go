@@ -5,6 +5,8 @@ package errors
 import (
 	"net/http"
 	"testing"
+
+	"go.uber.org/zap/zapcore"
 )
 
 func TestKindForStatus_exactForStandardStatuses(t *testing.T) {
@@ -96,5 +98,98 @@ func TestKindForStatus_nonStandardFallsBackToClass(t *testing.T) {
 	// 460 is not a standard status, so it falls back to the 4xx class base.
 	if KindForStatus(460) != KindUserError {
 		t.Error("a non-standard 4xx status should fall back to KindUserError")
+	}
+}
+
+func TestStatusCode_fallsBackToKind(t *testing.T) {
+	cases := []struct {
+		name string
+		kind *Kind
+		want int
+	}{
+		{"user class", KindUserError, http.StatusBadRequest},
+		{"system class", KindSystemError, http.StatusInternalServerError},
+		{"secondary", KindForStatus(http.StatusBadGateway), http.StatusBadGateway},
+		{"tertiary", KindNotFoundError, http.StatusNotFound},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := New(tc.kind, "boom").StatusCode(); got != tc.want {
+				t.Errorf("StatusCode() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestStatus_preservesExactCode(t *testing.T) {
+	for _, code := range []int{499, 599} {
+		e := New(KindForStatus(code), "upstream", Status(code))
+		if got := e.StatusCode(); got != code {
+			t.Errorf("StatusCode() = %d, want %d", got, code)
+		}
+	}
+}
+
+func TestStatus_ignoresNonPositiveCode(t *testing.T) {
+	e := New(KindNotFoundError, "missing", Status(0), Status(-7))
+	if got := e.StatusCode(); got != http.StatusNotFound {
+		t.Errorf("StatusCode() = %d, want 404", got)
+	}
+}
+
+func TestStatus_survivesPropagation(t *testing.T) {
+	cause := New(KindSystemError, "upstream", Status(599))
+
+	cases := map[string]error{
+		"Propagate":   Propagate(cause, "calling upstream"),
+		"PropagateAs": PropagateAs(KindError, cause, "calling upstream"),
+		"From":        From(KindError, cause, "calling upstream"),
+	}
+
+	for name, err := range cases {
+		t.Run(name, func(t *testing.T) {
+			e, ok := err.(*ErrorT)
+			if !ok {
+				t.Fatalf("%s returned %T, want *ErrorT", name, err)
+			}
+			if got := e.StatusCode(); got != 599 {
+				t.Errorf("StatusCode() = %d, want 599", got)
+			}
+		})
+	}
+}
+
+func TestStatus_optWinsOverCarriedValue(t *testing.T) {
+	cause := New(KindSystemError, "upstream", Status(599))
+
+	e, ok := From(KindError, cause, "calling upstream", Status(502)).(*ErrorT)
+	if !ok {
+		t.Fatal("From should return an *ErrorT")
+	}
+	if got := e.StatusCode(); got != http.StatusBadGateway {
+		t.Errorf("StatusCode() = %d, want 502", got)
+	}
+}
+
+func TestStatus_leavesKindMatchingUntouched(t *testing.T) {
+	e := New(KindNotFoundError, "missing", Status(599))
+
+	if !IsKind(e, KindNotFoundError) || !IsKind(e, KindUserError) {
+		t.Error("an overridden status should not change kind matching")
+	}
+	if got := e.Kind().StatusCode(); got != http.StatusNotFound {
+		t.Errorf("Kind().StatusCode() = %d, want 404", got)
+	}
+}
+
+func TestStatus_reachesTheZapStatusField(t *testing.T) {
+	enc := zapcore.NewMapObjectEncoder()
+	if err := New(KindSystemError, "upstream", Status(599)).MarshalLogObject(enc); err != nil {
+		t.Fatalf("MarshalLogObject: %v", err)
+	}
+
+	if got := enc.Fields["error_status_code"]; got != 599 {
+		t.Errorf("error_status_code = %v, want 599", got)
 	}
 }
