@@ -323,6 +323,39 @@ ectx := errors.Context(
 // logs as: "sk****f456"
 ```
 
+### Exact HTTP statuses
+
+`ErrorT.StatusCode` is the status of the error's kind. `Kind.CustomizeStatusCode`
+pins that status to an exact code, which is what a status received from a peer
+needs: `KindForStatus` can only classify a non-standard `499` or `599` as its 4xx
+or 5xx class, so the original code would otherwise be lost.
+
+```go
+err := errors.New(
+    errors.KindForStatus(499).CustomizeStatusCode(499),
+    "client closed the request",
+)
+// errors.IsKind(err, errors.KindUserError) is true, StatusCode() is 499.
+```
+
+What you get back is a copy of the kind, so its name, code, description, parent,
+FQN, the DTO it produces, and kind matching are the ones the original produces,
+and the kind it copied stays as it was, registry included. Propagation carries
+the pinned status outward through `Propagate`, `PropagateAs`, `From`, and
+templates; a kind the wrapping call pinned itself wins over the one carried from
+the cause. Redaction still follows the kind's class and not the number, so a
+system error pinned to a 4xx status is sanitized all the same.
+
+> **Migration:** `Kind` now carries unexported state to mark a pinned status.
+> Positional `Kind` literals, and conversions from an equivalent five-field
+> struct, no longer compile. Use keyed literals, and convert field by field:
+> `errors.Kind{Name: ..., Code: ..., Description: ..., HTTPStatusCode: ..., Parent: ...}`.
+> Copying a whole `Kind` value keeps the mark, while rebuilding one from the
+> exported fields alone drops it, and with it the precedence a pinned status has
+> over an inherited one, so call `CustomizeStatusCode` again when that was the
+> intent. Match kinds with `errors.IsKind` or `Kind.Is` instead of comparing
+> pointers with a registry entry, since a customized kind is a copy.
+
 ### Error templates
 
 Templates are reusable error factories. They define the kind, message, and
@@ -647,13 +680,13 @@ if resp.IsError() {
 
 It never turns an upstream failure into a local parser error. A garlic DTO whose
 kind this program knows decodes as it was sent, extra fields from a newer garlic
-included, and reports the status of that kind, since the kind is what the peer
-meant. An unknown kind becomes an `UnknownResponseError` naming the code it
-received, which is how a version mismatch between services shows up. A proxy's
-HTML page, malformed JSON, or an empty body becomes an error of the kind for the
-upstream status. For all of those, `ErrorT.StatusCode` reports the exact status
-that arrived, including a non-standard `499` or `599`. The transport status is
-on `Response.StatusCode` in every case, and the body is drained and closed.
+included, since the kind is what the peer meant. An unknown kind becomes an
+`UnknownResponseError` naming the code it received, which is how a version
+mismatch between services shows up. A proxy's HTML page, malformed JSON, or an
+empty body becomes an error of the kind for the upstream status. For all of
+those, `ErrorT.StatusCode` reports the exact status that arrived, including a
+non-standard `499` or `599`, and it is the same value left on
+`Response.StatusCode`. The body is drained and closed in every case.
 
 The client also supports streaming uploads with explicit `Content-Length`, raw
 streaming downloads through the response body, pluggable auth through a

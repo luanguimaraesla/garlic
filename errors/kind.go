@@ -21,6 +21,10 @@ type Kind struct {
 	Description    string
 	HTTPStatusCode int
 	Parent         *Kind
+
+	// customStatus marks a value produced by CustomizeStatusCode, which is how
+	// propagation tells a status pinned on purpose from a kind's own default.
+	customStatus bool
 }
 
 // Register adds a new Kind instance to the global registry of error kinds.
@@ -106,6 +110,28 @@ func (k *Kind) StatusCode() int {
 	}
 
 	return http.StatusInternalServerError
+}
+
+// CustomizeStatusCode returns a copy of the kind that reports code as its HTTP
+// status. It is what a status received from elsewhere needs: [KindForStatus] can
+// only classify a non-standard 499 or 599 as its 4xx or 5xx class, so the exact
+// code would otherwise be lost.
+//
+// The copy keeps the name, code, description, and parent of the original, so its
+// FQN, its kind matching, and the DTO it produces are the ones the original
+// would produce; only the status differs. Neither the receiver nor the registry
+// is touched, so a registered kind is safe to customize repeatedly and from
+// several goroutines. A non-positive code is ignored and returns the receiver.
+func (k *Kind) CustomizeStatusCode(code int) *Kind {
+	if code <= 0 {
+		return k
+	}
+
+	custom := *k
+	custom.HTTPStatusCode = code
+	custom.customStatus = true
+
+	return &custom
 }
 
 // Is checks if the current Kind instance matches the specified other Kind instance

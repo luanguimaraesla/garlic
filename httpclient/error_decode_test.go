@@ -846,10 +846,16 @@ func TestResponse_DecodeErrorKeepsUnsafeMediaTypesOffTheWire(t *testing.T) {
 	}
 }
 
-// A registered kind is authoritative, including its status: the transport status
-// it happened to travel under stays on the Response.
-func TestResponse_DecodeErrorKeepsARegisteredKindStatus(t *testing.T) {
-	raw, err := json.Marshal(errors.New(errors.KindNotFoundError, "user 42 does not exist").ErrorDTO())
+// A registered kind stays authoritative for classification and for what the DTO
+// says, while the status the error reports is the one its response arrived with.
+func TestResponse_DecodeErrorRestoresTheTransportStatusOfARegisteredDTO(t *testing.T) {
+	raw, err := json.Marshal(errors.DTO{
+		Name:    errors.KindNotFoundError.FQN(),
+		Error:   "user 42 does not exist",
+		Code:    errors.KindNotFoundError.Code,
+		Origin:  errors.KindSystemError.Code,
+		Details: map[string]any{"hint": "check the identifier"},
+	})
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
@@ -866,12 +872,185 @@ func TestResponse_DecodeErrorKeepsARegisteredKindStatus(t *testing.T) {
 			if !errors.IsKind(gerr, errors.KindUserError) {
 				t.Error("semantic class matching should survive a 5xx transport status")
 			}
-			if got := asErrorT(t, gerr).StatusCode(); got != http.StatusNotFound {
-				t.Errorf("StatusCode() = %d, want the registered kind's 404", got)
+
+			e := asErrorT(t, gerr)
+			if got := e.StatusCode(); got != status {
+				t.Errorf("StatusCode() = %d, want the transport %d", got, status)
 			}
+			if got := e.Kind().StatusCode(); got != status {
+				t.Errorf("Kind().StatusCode() = %d, want the transport %d", got, status)
+			}
+
+			if gerr.Error() != "user 42 does not exist" {
+				t.Errorf("message = %q, want the peer's, with no frame added", gerr.Error())
+			}
+			if e.Unwrap() != nil {
+				t.Errorf("cause = %v, want none added", e.Unwrap())
+			}
+			if got := e.Details["hint"]; got != "check the identifier" {
+				t.Errorf("details hint = %v", got)
+			}
+			if code, ok := errors.OriginCodeOf(gerr); !ok || code != errors.KindSystemError.Code {
+				t.Errorf("origin = %q, %v, want %q", code, ok, errors.KindSystemError.Code)
+			}
+
+			dto := e.ErrorDTO()
+			if dto.Code != errors.KindNotFoundError.Code || dto.Name != errors.KindNotFoundError.FQN() {
+				t.Errorf("wire DTO = %+v, want the peer's kind", dto)
+			}
+
 			if resp.StatusCode != status {
 				t.Errorf("Response.StatusCode = %d, want the transport %d", resp.StatusCode, status)
 			}
+		})
+	}
+
+	if got := errors.KindNotFoundError.StatusCode(); got != http.StatusNotFound {
+		t.Errorf("the registered kind now reports %d after two responses, want 404", got)
+	}
+}
+
+// The status a registered DTO reports has to reach the wire when a service
+// writes the decoded error back to its own caller.
+func TestResponse_DecodeErrorRegisteredDTOReachesTheWireUnderTheTransportStatus(t *testing.T) {
+	raw, err := json.Marshal(errors.New(errors.KindNotFoundError, "user 42 does not exist").ErrorDTO())
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	gerr := errorResponse(599, io.NopCloser(bytes.NewReader(raw)), "application/json").DecodeError()
+
+	rec := httptest.NewRecorder()
+	rest.WriteError(gerr).Must(rec)
+
+	if rec.Code != 599 {
+		t.Errorf("wire status = %d, want 599", rec.Code)
+	}
+
+	var dto errors.DTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &dto); err != nil {
+		t.Fatalf("decoding the wire body %q: %v", rec.Body.String(), err)
+	}
+	if dto.Code != errors.KindNotFoundError.Code {
+		t.Errorf("wire kind = %q, want %q", dto.Code, errors.KindNotFoundError.Code)
+	}
+	if dto.Error != "user 42 does not exist" {
+		t.Errorf("wire message = %q, want the peer's", dto.Error)
+	}
+}
+
+// Restoring the transport status must not reclassify the peer's kind. A
+// registered system kind that arrives under a 4xx status is still a system
+// error, so serializing the decoded error back to this service's own caller
+// sanitizes it as usual.
+func TestResponse_DecodeErrorRegisteredSystemDTOUnder4xxStaysSanitized(t *testing.T) {
+	const secret = "dial tcp 10.0.0.5:7233: connection refused"
+
+	raw, err := json.Marshal(errors.DTO{
+		Name:    errors.KindSystemError.FQN(),
+		Error:   secret,
+		Code:    errors.KindSystemError.Code,
+		Details: map[string]any{"hint": "internal detail"},
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	for _, status := range []int{http.StatusBadRequest, http.StatusNotFound, 499} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			gerr := errorResponse(status, io.NopCloser(bytes.NewReader(raw)), "application/json").DecodeError()
+
+			if !errors.IsKind(gerr, errors.KindSystemError) {
+				t.Fatalf("kind = %v, want KindSystemError", gerr)
+			}
+			if errors.IsKind(gerr, errors.KindUserError) {
+				t.Error("a 4xx transport status must not reclassify a system kind")
+			}
+			if got := asErrorT(t, gerr).StatusCode(); got != status {
+				t.Errorf("StatusCode() = %d, want the transport %d", got, status)
+			}
+
+			rec := httptest.NewRecorder()
+			rest.WriteError(gerr).Must(rec)
+
+			if rec.Code != status {
+				t.Errorf("wire status = %d, want %d", rec.Code, status)
+			}
+
+			var dto errors.DTO
+			if err := json.Unmarshal(rec.Body.Bytes(), &dto); err != nil {
+				t.Fatalf("decoding the wire body %q: %v", rec.Body.String(), err)
+			}
+
+			generic := errors.KindForStatus(status)
+			if dto.Code != generic.Code || dto.Error != generic.Description {
+				t.Errorf("body: want the generic kind for %d, got %+v", status, dto)
+			}
+			if strings.Contains(rec.Body.String(), "10.0.0.5") {
+				t.Errorf("the peer's system message reached the wire: %s", rec.Body.String())
+			}
+			if dto.Details["hint"] == "internal detail" {
+				t.Error("the peer's own hint crossed the wire")
+			}
+			if dto.Origin != errors.KindSystemError.Code {
+				t.Errorf("origin = %q, want the system kind code %q", dto.Origin, errors.KindSystemError.Code)
+			}
+		})
+	}
+
+	if got := errors.KindSystemError.StatusCode(); got != http.StatusInternalServerError {
+		t.Errorf("the registered kind now reports %d after three responses, want 500", got)
+	}
+}
+
+// A full round trip through a garlic service: the status the peer pinned on the
+// kind reaches the wire, and the client reads it back as the exact code.
+func TestResponse_DecodeErrorRoundTripsCustomizedStatuses(t *testing.T) {
+	cases := map[string]struct {
+		served      error
+		status      int
+		kind        *errors.Kind
+		wantMessage string
+	}{
+		"user error under 499": {
+			served:      errors.New(errors.KindNotFoundError.CustomizeStatusCode(499), "user 42 does not exist"),
+			status:      499,
+			kind:        errors.KindNotFoundError,
+			wantMessage: "user 42 does not exist",
+		},
+		"sanitized system error under 599": {
+			served:      errors.New(errors.KindSystemError.CustomizeStatusCode(599), "dial tcp 10.0.0.5:7233: connection refused"),
+			status:      599,
+			kind:        errors.KindSystemError,
+			wantMessage: errors.KindSystemError.Description,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				rest.WriteError(tc.served).Must(w)
+			})
+
+			resp, err := client.R(context.Background()).Get("/users/42")
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if resp.StatusCode != tc.status {
+				t.Fatalf("Response.StatusCode = %d, want %d", resp.StatusCode, tc.status)
+			}
+
+			gerr := resp.DecodeError()
+			if !errors.IsKind(gerr, tc.kind) {
+				t.Fatalf("kind = %v, want %s", gerr, tc.kind.Name)
+			}
+			if got := asErrorT(t, gerr).StatusCode(); got != tc.status {
+				t.Errorf("StatusCode() = %d, want %d", got, tc.status)
+			}
+			if gerr.Error() != tc.wantMessage {
+				t.Errorf("message = %q, want %q", gerr.Error(), tc.wantMessage)
+			}
+			assertNoLeak(t, gerr, "10.0.0.5")
 		})
 	}
 }

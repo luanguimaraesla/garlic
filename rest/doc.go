@@ -78,12 +78,17 @@
 //
 // When a handler returns a non-nil error, the route wrapper logs it and calls
 // [WriteError] to produce an appropriate JSON response. [WriteError] is the one
-// canonical error writer: the HTTP status comes from the error's kind, and user
-// errors (4xx) cross the wire in full. System errors (5xx) keep their real HTTP
-// status, but the body is sanitized to the generic kind for that status, so the
-// standard status text, name, and code cross the wire while the specific kind's
-// dynamic message and details do not. The specific kind's code is preserved as
-// an origin reference so a client can still quote it to support.
+// canonical error writer: the HTTP status comes from the error's kind, and what
+// the body may say follows that kind's user or system classification, not the
+// number. A user-class error crosses the wire in full. Every other error keeps
+// its real HTTP status, but the body is sanitized to the generic kind for that
+// status, so the standard status text, name, and code cross the wire while the
+// specific kind's dynamic message and details do not. The specific kind's code
+// is preserved as an origin reference so a client can still quote it to support.
+//
+// The classification and the status class do not have to agree numerically:
+// [errors.Kind.CustomizeStatusCode] can put a system error under a 4xx status or
+// a user error under a 5xx one, and the sanitization still follows the class.
 //
 // # App Interface
 //

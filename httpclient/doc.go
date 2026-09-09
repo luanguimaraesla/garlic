@@ -96,9 +96,9 @@
 // From there the outcome is one of three:
 //
 //   - A DTO whose kind is registered in this program decodes faithfully, keeping
-//     the peer's kind, message, details, origin, and the status of that kind.
-//     Fields a newer garlic added are tolerated, and parsing is not size-capped,
-//     so a large valid DTO is never truncated or reclassified.
+//     the peer's kind, message, details, and origin. Fields a newer garlic added
+//     are tolerated, and parsing is not size-capped, so a large valid DTO is
+//     never truncated or reclassified.
 //   - A DTO carrying a kind this program does not know becomes a
 //     [KindUnknownResponseError] naming the received code, with the generic kind
 //     for the upstream status underneath as its cause. errors.IsKind therefore
@@ -109,13 +109,13 @@
 //     dies halfway keeps the prefix that did arrive and the read failure as its
 //     local cause.
 //
-// Every error DecodeError builds itself reports the exact upstream status
-// through errors.ErrorT.StatusCode, including a non-standard 499 or 599 that its
-// kind can only classify as a 4xx or 5xx class, so generic status matching and
-// semantic kind matching both keep working. A registered DTO is the exception:
-// its kind is authoritative and it reports that kind's status, the one the peer
-// named rather than the one its response travelled under. The transport status
-// is on Response.StatusCode either way.
+// Every error DecodeError returns reports the exact upstream status through
+// errors.ErrorT.StatusCode, including a non-standard 499 or 599 that its kind
+// can only classify as a 4xx or 5xx class, so generic status matching and
+// semantic kind matching both keep working. A registered DTO is no exception:
+// its kind still decides classification, matching, and what the DTO says, while
+// the status it reports is the one its response travelled under, the same value
+// left on Response.StatusCode.
 //
 // # Diagnostics kept from an error response
 //
