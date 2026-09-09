@@ -96,7 +96,6 @@
 //   - [Context] captures debugging key-value pairs with automatic caller detection.
 //   - [RevTrace] appends a reverse trace entry (auto-added by [New] and [Propagate]).
 //   - [StackTrace] captures the full goroutine stack.
-//   - [Status] pins the HTTP status the error reports (see below).
 //   - [Template] creates a reusable error template (see [TemplateT]).
 //
 // Example with options:
@@ -109,21 +108,35 @@
 //
 // # Exact HTTP Statuses
 //
-// [ErrorT.StatusCode] is the status an error reports. It normally comes from the
-// error's kind, so nothing changes for an error built the usual way. [Status]
-// pins it to an exact code instead, which is what a status received from
-// elsewhere needs: [KindForStatus] can only classify a non-standard 499 or 599
-// as its 4xx or 5xx class, and the original code would otherwise be lost.
+// [ErrorT.StatusCode] is the status an error reports, and it is the status of
+// the error's kind, so nothing changes for an error built the usual way.
+// [Kind.CustomizeStatusCode] pins that status to an exact code, which is what a
+// status received from elsewhere needs: [KindForStatus] can only classify a
+// non-standard 499 or 599 as its 4xx or 5xx class, and the original code would
+// otherwise be lost.
 //
-//	err := errors.New(errors.KindForStatus(499), "client closed the request",
-//	    errors.Status(499),
+//	err := errors.New(
+//	    errors.KindForStatus(499).CustomizeStatusCode(499),
+//	    "client closed the request",
 //	)
 //	// errors.IsKind(err, errors.KindUserError) is true, StatusCode() is 499.
 //
-// The override changes nothing else: the kind, [Kind.StatusCode], the wire DTO,
-// and kind matching all stay as they were. Propagation carries it outward, so
-// the exact status survives [Propagate], [PropagateAs], and [From]; a [Status]
-// passed to the wrapping call wins over the one carried from the cause.
+// What you get back is a copy of the kind, so its name, code, description,
+// parent, FQN, the [DTO] it produces, and kind matching are the ones the
+// original produces, and the kind it copied stays as it was, registry included.
+// Propagation carries the pinned status outward, so it survives [Propagate],
+// [PropagateAs], [From], and a [TemplateT]; a kind the wrapping call customized
+// itself wins over the one carried from the cause. Redaction on the wire keeps
+// following the kind's user or system classification, not the status class.
+//
+// [Kind] carries unexported state to mark a status pinned on purpose, so a kind
+// declared outside this package has to use keyed fields: a positional literal,
+// or a conversion from an equivalent five-field struct, no longer compiles.
+// Copying a whole kind value keeps that mark, while rebuilding one from the
+// exported fields alone drops it, and with it the precedence a pinned status has
+// over the one a cause carries; call [Kind.CustomizeStatusCode] again to state
+// that intent. Match kinds with [IsKind] or [Kind.Is] rather than comparing
+// pointers with a registry entry, since a customized kind is a copy.
 //
 // # Templates
 //

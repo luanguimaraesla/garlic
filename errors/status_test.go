@@ -9,6 +9,19 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// statusOf reads the status of a propagated error, which is always backed by an
+// *ErrorT.
+func statusOf(t *testing.T, err error) int {
+	t.Helper()
+
+	e, ok := err.(*ErrorT)
+	if !ok {
+		t.Fatalf("propagation returned %T, want *ErrorT", err)
+	}
+
+	return e.StatusCode()
+}
+
 func TestKindForStatus_exactForStandardStatuses(t *testing.T) {
 	statuses := []int{
 		http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,
@@ -122,29 +135,30 @@ func TestStatusCode_fallsBackToKind(t *testing.T) {
 	}
 }
 
-func TestStatus_preservesExactCode(t *testing.T) {
+func TestCustomizeStatusCode_preservesExactCode(t *testing.T) {
 	for _, code := range []int{499, 599} {
-		e := New(KindForStatus(code), "upstream", Status(code))
+		e := New(KindForStatus(code).CustomizeStatusCode(code), "upstream")
 		if got := e.StatusCode(); got != code {
 			t.Errorf("StatusCode() = %d, want %d", got, code)
 		}
 	}
 }
 
-func TestStatus_ignoresNonPositiveCode(t *testing.T) {
-	e := New(KindNotFoundError, "missing", Status(0), Status(-7))
+func TestCustomizeStatusCode_ignoresNonPositiveCode(t *testing.T) {
+	e := New(KindNotFoundError.CustomizeStatusCode(0).CustomizeStatusCode(-7), "missing")
 	if got := e.StatusCode(); got != http.StatusNotFound {
 		t.Errorf("StatusCode() = %d, want 404", got)
 	}
 }
 
-func TestStatus_survivesPropagation(t *testing.T) {
-	cause := New(KindSystemError, "upstream", Status(599))
+func TestCustomizeStatusCode_survivesPropagation(t *testing.T) {
+	newCause := func() *ErrorT { return New(KindSystemError.CustomizeStatusCode(599), "upstream") }
 
 	cases := map[string]error{
-		"Propagate":   Propagate(cause, "calling upstream"),
-		"PropagateAs": PropagateAs(KindError, cause, "calling upstream"),
-		"From":        From(KindError, cause, "calling upstream"),
+		"Propagate":   Propagate(newCause(), "calling upstream"),
+		"PropagateAs": PropagateAs(KindError, newCause(), "calling upstream"),
+		"From":        From(KindError, newCause(), "calling upstream"),
+		"Template":    Template(KindError, "calling upstream").Propagate(newCause()),
 	}
 
 	for name, err := range cases {
@@ -156,14 +170,21 @@ func TestStatus_survivesPropagation(t *testing.T) {
 			if got := e.StatusCode(); got != 599 {
 				t.Errorf("StatusCode() = %d, want 599", got)
 			}
+			if got := e.Kind().StatusCode(); got != 599 {
+				t.Errorf("Kind().StatusCode() = %d, want 599", got)
+			}
 		})
+	}
+
+	if got := KindError.StatusCode(); got != http.StatusInternalServerError {
+		t.Errorf("inheriting a status changed the registered kind to %d", got)
 	}
 }
 
-func TestStatus_optWinsOverCarriedValue(t *testing.T) {
-	cause := New(KindSystemError, "upstream", Status(599))
+func TestCustomizeStatusCode_targetWinsOverTheCause(t *testing.T) {
+	cause := New(KindSystemError.CustomizeStatusCode(599), "upstream")
 
-	e, ok := From(KindError, cause, "calling upstream", Status(502)).(*ErrorT)
+	e, ok := From(KindError.CustomizeStatusCode(http.StatusBadGateway), cause, "calling upstream").(*ErrorT)
 	if !ok {
 		t.Fatal("From should return an *ErrorT")
 	}
@@ -172,24 +193,146 @@ func TestStatus_optWinsOverCarriedValue(t *testing.T) {
 	}
 }
 
-func TestStatus_leavesKindMatchingUntouched(t *testing.T) {
-	e := New(KindNotFoundError, "missing", Status(599))
+// A kind customized to the status it already defaults to still has to beat the
+// one carried by the cause, otherwise a deliberate 400 would silently become the
+// upstream's status.
+func TestCustomizeStatusCode_explicitDefaultBeatsAnInheritedStatus(t *testing.T) {
+	cause := New(KindSystemError.CustomizeStatusCode(599), "upstream")
 
-	if !IsKind(e, KindNotFoundError) || !IsKind(e, KindUserError) {
-		t.Error("an overridden status should not change kind matching")
+	explicit, ok := PropagateAs(KindUserError.CustomizeStatusCode(http.StatusBadRequest), cause, "rejecting").(*ErrorT)
+	if !ok {
+		t.Fatal("PropagateAs should return an *ErrorT")
 	}
-	if got := e.Kind().StatusCode(); got != http.StatusNotFound {
-		t.Errorf("Kind().StatusCode() = %d, want 404", got)
+	if got := explicit.StatusCode(); got != http.StatusBadRequest {
+		t.Errorf("an explicit 400 reports %d, want 400", got)
+	}
+
+	inherited, ok := PropagateAs(KindUserError, cause, "rejecting").(*ErrorT)
+	if !ok {
+		t.Fatal("PropagateAs should return an *ErrorT")
+	}
+	if got := inherited.StatusCode(); got != 599 {
+		t.Errorf("a default 400 reports %d, want the inherited 599", got)
 	}
 }
 
-func TestStatus_reachesTheZapStatusField(t *testing.T) {
+// The other half of the distinction above, on the cause side: a status the cause
+// pinned on purpose is carried outward even when the wrapping call retypes the
+// error, while a cause that merely reports its kind's default leaves the outer
+// default alone.
+func TestCustomizeStatusCode_explicitDefaultCauseSurvivesRetyping(t *testing.T) {
+	pinned := func() *ErrorT { return New(KindUserError.CustomizeStatusCode(http.StatusBadRequest), "rejecting") }
+	plain := func() *ErrorT { return New(KindUserError, "rejecting") }
+
+	cases := map[string]struct {
+		pinnedCause error
+		plainCause  error
+	}{
+		"PropagateAs": {
+			pinnedCause: PropagateAs(KindSystemError, pinned(), "handling"),
+			plainCause:  PropagateAs(KindSystemError, plain(), "handling"),
+		},
+		"From": {
+			pinnedCause: From(KindSystemError, pinned(), "handling"),
+			plainCause:  From(KindSystemError, plain(), "handling"),
+		},
+		"Template": {
+			pinnedCause: Template(KindSystemError, "handling").Propagate(pinned()),
+			plainCause:  Template(KindSystemError, "handling").Propagate(plain()),
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := statusOf(t, tc.pinnedCause); got != http.StatusBadRequest {
+				t.Errorf("a cause pinned to 400 reports %d after retyping, want 400", got)
+			}
+			if got := statusOf(t, tc.plainCause); got != http.StatusInternalServerError {
+				t.Errorf("a cause defaulting to 400 reports %d, want the outer 500", got)
+			}
+		})
+	}
+}
+
+// A template that pins its own status keeps it whatever the cause reports, and
+// using the template again changes neither its definition nor the registered
+// kind it was built from.
+func TestCustomizeStatusCode_customizedTemplateTargetWinsAndIsReusable(t *testing.T) {
+	causes := map[string]*Kind{
+		"a non-standard 599": KindSystemError.CustomizeStatusCode(599),
+		"an explicit 404":    KindNotFoundError.CustomizeStatusCode(http.StatusNotFound),
+		"an explicit 400":    KindUserError.CustomizeStatusCode(http.StatusBadRequest),
+	}
+
+	cases := map[string]struct {
+		target *Kind
+		want   int
+	}{
+		"target pinned to another status": {KindSystemError.CustomizeStatusCode(http.StatusBadGateway), http.StatusBadGateway},
+		"target pinned to its default":    {KindSystemError.CustomizeStatusCode(http.StatusInternalServerError), http.StatusInternalServerError},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			template := Template(tc.target, "calling upstream")
+
+			for causeName, causeKind := range causes {
+				got := statusOf(t, template.Propagate(New(causeKind, "upstream")))
+				if got != tc.want {
+					t.Errorf("a cause carrying %s makes the template report %d, want %d", causeName, got, tc.want)
+				}
+			}
+
+			if got := template.New().StatusCode(); got != tc.want {
+				t.Errorf("the reused template reports %d, want %d", got, tc.want)
+			}
+		})
+	}
+
+	if got := KindSystemError.StatusCode(); got != http.StatusInternalServerError {
+		t.Errorf("the registered kind reports %d after templated propagations, want 500", got)
+	}
+}
+
+func TestCustomizeStatusCode_leavesKindMatchingUntouched(t *testing.T) {
+	e := New(KindNotFoundError.CustomizeStatusCode(599), "missing")
+
+	if !IsKind(e, KindNotFoundError) || !IsKind(e, KindUserError) {
+		t.Error("a customized status should not change kind matching")
+	}
+	if e.Code() != KindNotFoundError.Code || e.ErrorDTO().Name != KindNotFoundError.FQN() {
+		t.Errorf("the wire DTO %+v should be the one the original kind produces", e.ErrorDTO())
+	}
+	if got := KindNotFoundError.StatusCode(); got != http.StatusNotFound {
+		t.Errorf("the registered kind reports %d, want 404", got)
+	}
+}
+
+// ErrorT.StatusCode delegates to the kind, so the two must never disagree.
+func TestCustomizeStatusCode_agreesWithTheKind(t *testing.T) {
+	e := New(KindNotFoundError.CustomizeStatusCode(599), "missing")
+
+	if e.StatusCode() != e.Kind().StatusCode() {
+		t.Errorf("StatusCode() = %d, Kind().StatusCode() = %d", e.StatusCode(), e.Kind().StatusCode())
+	}
+	if got := e.StatusCode(); got != 599 {
+		t.Errorf("StatusCode() = %d, want 599", got)
+	}
+}
+
+func TestCustomizeStatusCode_reachesTheZapStatusField(t *testing.T) {
 	enc := zapcore.NewMapObjectEncoder()
-	if err := New(KindSystemError, "upstream", Status(599)).MarshalLogObject(enc); err != nil {
+	if err := New(KindSystemError.CustomizeStatusCode(599), "upstream").MarshalLogObject(enc); err != nil {
 		t.Fatalf("MarshalLogObject: %v", err)
 	}
 
 	if got := enc.Fields["error_status_code"]; got != 599 {
 		t.Errorf("error_status_code = %v, want 599", got)
+	}
+	if got := enc.Fields["code"]; got != KindSystemError.Code {
+		t.Errorf("code = %v, want %q", got, KindSystemError.Code)
+	}
+	if got := enc.Fields["kind"]; got != KindSystemError.FQN() {
+		t.Errorf("kind = %v, want %q", got, KindSystemError.FQN())
 	}
 }

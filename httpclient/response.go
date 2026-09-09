@@ -77,10 +77,11 @@ func (r *Response) Decode(v any) error {
 //
 // Every error built here reports the exact upstream status through
 // [errors.ErrorT.StatusCode], including a non-standard code such as 499 or 599
-// that its kind can only classify as a 4xx or 5xx class. A registered DTO is the
-// exception: its kind is authoritative and it reports that kind's status, the
-// one the peer named rather than the one its response travelled under. The
-// transport status stays on [Response.StatusCode] either way.
+// that its kind can only classify as a 4xx or 5xx class, and including a
+// registered DTO that travelled under a status its own kind would not have
+// chosen. The kind stays authoritative for classification and matching; the
+// status is the one the response actually arrived with, the same value left on
+// [Response.StatusCode].
 //
 // What the peer wrote into a body that is not a DTO is kept only in the
 // troubleshooting context, bounded at maxDiagnosticBytes and only while it is
@@ -120,24 +121,24 @@ func (r *Response) DecodeError() error {
 	case readErr != nil:
 		// Keep the prefix that did arrive: a truncated diagnostic is still a
 		// diagnostic, and the read failure stays visible as the local cause.
-		return errors.From(errors.KindForStatus(status), readErr,
+		return errors.From(statusKind(status), readErr,
 			"failed reading the upstream error response",
 			fallbackOpts(status, mediaType, captureDiagnostic(body))...)
 
 	case len(body) == 0:
-		return errors.New(errors.KindForStatus(status),
+		return errors.New(statusKind(status),
 			"upstream returned an empty error response",
 			fallbackOpts(status, mediaType, capture{})...)
 	}
 
 	dto, raw, ok := parseErrorDTO(body)
 	if !ok {
-		return errors.New(errors.KindForStatus(status),
+		return errors.New(statusKind(status),
 			"upstream returned a non-garlic error response",
 			fallbackOpts(status, mediaType, captureDiagnostic(body))...)
 	}
 
-	if gerr, registered := dto.Decode(); registered {
+	if gerr, registered := decodeRegistered(dto, status); registered {
 		return gerr
 	}
 
@@ -149,11 +150,39 @@ func (r *Response) DecodeError() error {
 	// the mismatch.
 	return errors.From(
 		KindUnknownResponseError,
-		errors.Raw(errors.KindForStatus(status), "upstream returned an error status", errors.Status(status)),
+		errors.Raw(statusKind(status), "upstream returned an error status"),
 		fmt.Sprintf("upstream returned error kind %s, which is not registered here", renderReceived(code)),
-		errors.Status(status),
 		errors.Context(unknownKindEntries(status, raw, code)...),
 	)
+}
+
+// statusKind is the generic kind for an upstream status, pinned to that exact
+// status so a non-standard 499 or 599 survives a classification that can only
+// name its 4xx or 5xx class.
+func statusKind(status int) *errors.Kind {
+	return errors.KindForStatus(status).CustomizeStatusCode(status)
+}
+
+// decodeRegistered rebuilds a garlic error DTO whose kind this program knows,
+// reporting false for one it does not. It is [errors.DTO.Decode] with the
+// transport status restored: the peer's kind still decides classification,
+// matching, and what the DTO says, while the status the error reports is the one
+// the response arrived with. Message, details, and origin are the peer's, and no
+// frame is added on top of them.
+func decodeRegistered(dto *errors.DTO, status int) (*errors.ErrorT, bool) {
+	kind, ok := errors.LookupByCode(dto.Code)
+	if !ok {
+		return nil, false
+	}
+
+	gerr := errors.Override(
+		kind.CustomizeStatusCode(status),
+		errors.NewHeadlessError(dto.Origin),
+		dto.Error,
+	)
+	gerr.Details = dto.Details
+
+	return gerr, true
 }
 
 // rawFields holds the identifiers of an error DTO as they arrived on the wire.
@@ -223,9 +252,9 @@ func mediaTypeComponent(s string) bool {
 	return s != "" && len(s) <= maxMediaTypeComponentBytes
 }
 
-// fallbackOpts is the shape shared by every error DecodeError builds itself: the
-// exact upstream status, wire-visible metadata about the response, and the
-// bounded body snippet, which stays in the troubleshooting context.
+// fallbackOpts is the shape shared by every error DecodeError builds itself:
+// wire-visible metadata about the response, and the bounded body snippet, which
+// stays in the troubleshooting context.
 func fallbackOpts(status int, mediaType string, body capture) []errors.Opt {
 	details := diagnostics{
 		"http_status": status,
@@ -238,7 +267,6 @@ func fallbackOpts(status int, mediaType string, body capture) []errors.Opt {
 	}
 
 	return []errors.Opt{
-		errors.Status(status),
 		details,
 		errors.Context(body.entries("body")...),
 	}

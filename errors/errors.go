@@ -22,7 +22,6 @@ type ErrorT struct {
 	message         string
 	cause           error
 	origin          error
-	statusCode      int
 	Details         map[string]any
 	Troubleshooting Troubleshooting
 }
@@ -162,16 +161,11 @@ func (e *ErrorT) Code() string {
 	return e.Kind().Code
 }
 
-// StatusCode returns the HTTP status this error reports: the exact code set
-// through the [Status] option when one was applied, and the status of the
-// error's kind otherwise. Use it when a status received from elsewhere must
-// survive verbatim, such as a non-standard 499 or 599 that KindForStatus can
-// only classify as its 4xx or 5xx class.
+// StatusCode returns the HTTP status this error reports, which is the status of
+// its kind. Build the error with [Kind.CustomizeStatusCode] when a status
+// received from elsewhere must survive verbatim, such as a non-standard 499 or
+// 599 that [KindForStatus] can only classify as its 4xx or 5xx class.
 func (e *ErrorT) StatusCode() int {
-	if e.statusCode > 0 {
-		return e.statusCode
-	}
-
 	return e.Kind().StatusCode()
 }
 
@@ -198,13 +192,24 @@ func (e *ErrorT) wrap(other error) *ErrorT {
 	if o, ok := other.(*ErrorT); ok {
 		e.Details = o.Details
 		e.Troubleshooting = o.Troubleshooting
-		if e.statusCode == 0 {
-			e.statusCode = o.statusCode
-		}
+		e.inheritStatusCustomization(o.kind)
 	}
 
 	e.cause = other
 	return e
+}
+
+// inheritStatusCustomization carries a status pinned on the cause's kind onto
+// the kind this error was built with, so an exact status stays readable after
+// the error crosses a boundary. A kind the caller customized itself wins and is
+// left alone. The inheriting kind is copied rather than written to, so a
+// registered kind or a template's kind is never changed by a propagation.
+func (e *ErrorT) inheritStatusCustomization(cause *Kind) {
+	if cause == nil || !cause.customStatus || e.kind.customStatus {
+		return
+	}
+
+	e.kind = e.kind.CustomizeStatusCode(cause.HTTPStatusCode)
 }
 
 // Unwrap returns the wrapped error from the ErrorT instance.

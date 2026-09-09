@@ -141,6 +141,131 @@ func TestWriteError_specificSystemError_preservesStatusAndCode(t *testing.T) {
 	}
 }
 
+// A status pinned with Kind.CustomizeStatusCode reaches the wire on its own,
+// because WriteError already reads the status from the kind.
+func TestWriteError_customizedUserStatus_isServedInFull(t *testing.T) {
+	err := errors.New(errors.KindNotFoundError.CustomizeStatusCode(499), "user 42 does not exist")
+
+	w := httptest.NewRecorder()
+	resp := WriteError(err)
+	resp.Must(w)
+
+	if resp.StatusCode != 499 || w.Code != 499 {
+		t.Errorf("status: want 499, got %d (written %d)", resp.StatusCode, w.Code)
+	}
+
+	var dto errors.DTO
+	if err := json.Unmarshal(w.Body.Bytes(), &dto); err != nil {
+		t.Fatalf("decoding the wire body %q: %v", w.Body.String(), err)
+	}
+	if dto.Code != errors.KindNotFoundError.Code {
+		t.Errorf("code: want %q, got %q", errors.KindNotFoundError.Code, dto.Code)
+	}
+	if dto.Error != "user 42 does not exist" {
+		t.Errorf("a user error should still cross the wire in full, got %q", dto.Error)
+	}
+}
+
+// Redaction follows the kind's class, so a customized status changes the number
+// on the wire and nothing about what the body may say.
+func TestWriteError_customizedSystemStatus_staysSanitized(t *testing.T) {
+	err := errors.New(errors.KindSystemError.CustomizeStatusCode(599), "dial tcp 10.0.0.5:7233: connection refused")
+
+	w := httptest.NewRecorder()
+	resp := WriteError(err)
+	resp.Must(w)
+
+	if resp.StatusCode != 599 || w.Code != 599 {
+		t.Errorf("status: want 599, got %d (written %d)", resp.StatusCode, w.Code)
+	}
+
+	var dto errors.DTO
+	if err := json.Unmarshal(w.Body.Bytes(), &dto); err != nil {
+		t.Fatalf("decoding the wire body %q: %v", w.Body.String(), err)
+	}
+	if strings.Contains(dto.Error, "10.0.0.5") {
+		t.Errorf("a customized status must not stop the redaction: %q", dto.Error)
+	}
+	if dto.Origin != errors.KindSystemError.Code {
+		t.Errorf("origin: want %q, got %q", errors.KindSystemError.Code, dto.Origin)
+	}
+}
+
+// Redaction has to keep following the kind's class when the two stop agreeing
+// numerically. A system error reporting a 4xx status, whether it pinned that
+// status itself or inherited it from a customized user-kinded cause, must stay
+// sanitized: keying the decision off the number would publish it.
+func TestWriteError_systemErrorUnder4xx_staysSanitized(t *testing.T) {
+	const secret = "dial tcp 10.0.0.5:7233: connection refused"
+
+	inherited := func(cause *errors.Kind, status int) error {
+		return errors.PropagateAs(errors.KindSystemError,
+			errors.New(cause.CustomizeStatusCode(status), "public field message"),
+			secret, errors.Hint("internal detail"))
+	}
+
+	cases := map[string]struct {
+		err    error
+		status int
+	}{
+		"pinned to 400": {
+			errors.New(errors.KindSystemError.CustomizeStatusCode(http.StatusBadRequest), secret, errors.Hint("internal detail")),
+			http.StatusBadRequest,
+		},
+		"pinned to 404": {
+			errors.New(errors.KindSystemError.CustomizeStatusCode(http.StatusNotFound), secret, errors.Hint("internal detail")),
+			http.StatusNotFound,
+		},
+		"pinned to a non-standard 499": {
+			errors.New(errors.KindSystemError.CustomizeStatusCode(499), secret, errors.Hint("internal detail")),
+			499,
+		},
+		"inheriting 400 from a customized user cause": {
+			inherited(errors.KindInvalidRequestError, http.StatusBadRequest), http.StatusBadRequest,
+		},
+		"inheriting 404 from a customized user cause": {
+			inherited(errors.KindNotFoundError, http.StatusNotFound), http.StatusNotFound,
+		},
+		"inheriting a non-standard 499 from a customized user cause": {
+			inherited(errors.KindNotFoundError, 499), 499,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			resp := WriteError(tc.err)
+			resp.Must(w)
+
+			if resp.StatusCode != tc.status || w.Code != tc.status {
+				t.Errorf("status: want %d, got %d (written %d)", tc.status, resp.StatusCode, w.Code)
+			}
+
+			var dto errors.DTO
+			if err := json.Unmarshal(w.Body.Bytes(), &dto); err != nil {
+				t.Fatalf("decoding the wire body %q: %v", w.Body.String(), err)
+			}
+
+			generic := errors.KindForStatus(tc.status)
+			if dto.Code != generic.Code || dto.Name != generic.FQN() {
+				t.Errorf("body: want the generic kind for %d, got %+v", tc.status, dto)
+			}
+			if dto.Error != generic.Description {
+				t.Errorf("error: want the generic description, got %q", dto.Error)
+			}
+			if strings.Contains(w.Body.String(), "10.0.0.5") {
+				t.Errorf("a 4xx status must not stop the redaction: %s", w.Body.String())
+			}
+			if dto.Details["hint"] == "internal detail" {
+				t.Error("the suppressed error's own hint crossed the wire")
+			}
+			if dto.Origin != errors.KindSystemError.Code {
+				t.Errorf("origin: want the outer system code %q, got %q", errors.KindSystemError.Code, dto.Origin)
+			}
+		})
+	}
+}
+
 func TestWriteError_systemWrappingUserError_staysSanitized(t *testing.T) {
 	// A system error that wraps a user-kinded cause must still be sanitized: its
 	// own kind (and the HTTP status) is system, so the sensitive message must not
