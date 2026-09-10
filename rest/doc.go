@@ -37,18 +37,10 @@
 // page. Both write through [WriteError], with status 404 or 405 and a static
 // hint.
 //
-// chi drops its own Allow computation as soon as a custom MethodNotAllowed
-// handler is installed, and the method set it computed is unexported, so the 405
-// handler rebuilds the header: it probes the root router with the request's
-// root-level path, reconstructed from the mount patterns matched on the way in.
-// A probe that lands on the endpoint of a mount is followed into the router
-// mounted there, since chi answers those paths with a stub that accepts every
-// method before consulting what was mounted. The handler also reproduces chi's
-// treatment of a request method chi does not know, which is answered with a bare
-// 405 and no Allow at all, on an existing path as much as on a missing one. One
-// case cannot be reproduced: when a middleware inside a mounted router rewrites
-// the route path, the probe derives Allow from the rewritten tail, so methods
-// that only the original path could reach are missing from it.
+// The 405 response carries no Allow header. chi drops its own Allow computation
+// as soon as a custom MethodNotAllowed handler is installed and keeps the method
+// set it computed unexported, and garlic deliberately does not rebuild it, so a
+// client that needs the allowed methods has to consult the API documentation.
 //
 // Both handlers can be replaced through Router().NotFound and
 // Router().MethodNotAllowed. chi copies the handlers into a sub-router at mount
