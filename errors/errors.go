@@ -76,20 +76,15 @@ func PropagateAs(kind *Kind, err error, message string, opts ...Opt) error {
 	return From(kind, err, message, opts...)
 }
 
-// New creates a new instance of ErrorT with the specified kind, message, and options.
-// It initializes the ErrorT structure, sets the kind and message, and processes the provided
-// options by inserting them into the opts map using the insert method. This function is
-// essential for constructing error objects with additional context and metadata, which can
-// be used for detailed error reporting and handling.
+// New builds an error of the given kind and message, appending a reverse trace
+// entry so the origin of the failure stays visible.
 func New(kind *Kind, message string, opts ...Opt) *ErrorT {
 	opts = append(opts, RevTrace())
 	return Raw(kind, message, opts...)
 }
 
-// Raw creates a new instance of ErrorT with the specified kind, message, and options.
-// Unlike the New function, it does not append additional options for stack trace or reverse trace.
-// This function is useful when you want to create an error object without automatically
-// adding tracing information, allowing for more control over the error's metadata and context.
+// Raw is New without the automatic reverse trace entry, for an error whose
+// metadata the caller wants to control entirely.
 func Raw(kind *Kind, message string, opts ...Opt) *ErrorT {
 	return newErrorT(kind, message, nil).With(opts...)
 }
@@ -136,11 +131,7 @@ func MirrorOverride(kind *Kind, origin error, opts ...Opt) *ErrorT {
 	return newErrorT(kind, kind.Description, origin).With(opts...)
 }
 
-// Kind returns the kind of the ErrorT instance.
-// This method provides access to the error kind, which is used to
-// categorize and identify the nature of the error. It is useful for
-// error handling and reporting, allowing developers to determine the
-// specific type of error encountered.
+// Kind returns the kind that classifies the error.
 func (e *ErrorT) Kind() *Kind {
 	return e.kind
 }
@@ -179,11 +170,9 @@ func (e *ErrorT) With(opts ...Opt) *ErrorT {
 	return e
 }
 
-// wrap takes an existing error and wraps it with the current ErrorT instance,
-// incorporating any options from the existing error into the current instance.
-// If the existing error is of type ErrorT, its options are merged into the current
-// instance using the insert method. This allows for the aggregation of error
-// context and metadata, facilitating enhanced error tracking and debugging.
+// wrap attaches other as the cause and carries an ErrorT cause's details,
+// troubleshooting data, and pinned status outward, so the metadata gathered
+// deeper down survives the boundary.
 func (e *ErrorT) wrap(other error) *ErrorT {
 	if other == nil {
 		return e
@@ -212,20 +201,13 @@ func (e *ErrorT) inheritStatusCustomization(cause *Kind) {
 	e.kind = e.kind.CustomizeStatusCode(cause.HTTPStatusCode)
 }
 
-// Unwrap returns the wrapped error from the ErrorT instance.
-// This method is used to retrieve the original error that was wrapped
-// by the ErrorT instance, enabling error unwrapping and inspection
-// in error handling workflows.
+// Unwrap returns the cause, so the error works with the standard errors package.
 func (e *ErrorT) Unwrap() error {
 	return e.cause
 }
 
-// Error returns the error message for the ErrorT instance.
-// If the ErrorT instance wraps another error, this method
-// appends the wrapped error's message to the current error
-// message, providing a complete error description. This is
-// useful for error reporting and logging, as it gives a
-// comprehensive view of the error chain.
+// Error returns the message, followed by the cause chain when there is one. The
+// origin is troubleshooting metadata and never appears here.
 func (e *ErrorT) Error() string {
 	message := e.message
 	if e.cause != nil {
@@ -257,10 +239,8 @@ func (e *ErrorT) Description() string {
 	return e.kind.Description
 }
 
-// MarshalLogObject encodes the ErrorT instance into a zapcore.ObjectEncoder for structured logging.
-// This method adds the error message, kind, and any additional details from the options map to the
-// encoder. It ensures that all relevant error information is captured in the log, facilitating
-// comprehensive error tracking and debugging when using the zap logging library.
+// MarshalLogObject encodes the error for structured logging, including its
+// details and troubleshooting data.
 func (e *ErrorT) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddString("message", e.message)
 	enc.AddString("error", e.Error())
@@ -273,12 +253,8 @@ func (e *ErrorT) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	return nil
 }
 
-// Zap creates a zap.Field for logging an error using the zap logging library.
-// If the provided error is of type ErrorT, it logs the error as a zap object,
-// which includes detailed error information such as the message, kind, and options.
-// Otherwise, it logs the error using zap.Error, which captures the error message
-// and stack trace. This function is useful for integrating structured error logging
-// into applications using the zap logging framework.
+// Zap returns a zap.Field for err, logging a garlic error as a structured object
+// and anything else through zap.Error.
 func Zap(err error) zap.Field {
 	if e, ok := err.(*ErrorT); ok {
 		return zap.Object("error", e)

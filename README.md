@@ -323,6 +323,26 @@ ectx := errors.Context(
 // logs as: "sk****f456"
 ```
 
+Build the context in the function the error belongs to. `errors.Context` detects
+its caller and logs the fields under that name, so a context built inside a
+helper is filed under the helper.
+
+### Public details
+
+`errors.Details` merges key-value pairs into `ErrorT.Details`. Unlike context
+fields, details are public: they travel inside the DTO a service writes back to
+its own caller, so keep anything sensitive in a context instead.
+
+```go
+return errors.New(errors.KindInvalidRequestError, "the upload is too large",
+    errors.Details(map[string]any{"max_bytes": limit, "received_bytes": size}),
+)
+```
+
+The map is snapshotted, so an option can be reused across errors and later writes
+to your map never reach them. Keys already on the error are overwritten, so a
+later option wins.
+
 ### Exact HTTP statuses
 
 `ErrorT.StatusCode` is the status of the error's kind. `Kind.CustomizeStatusCode`
