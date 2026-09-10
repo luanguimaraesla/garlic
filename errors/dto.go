@@ -57,6 +57,21 @@ func (dto *DTO) Decode() (*ErrorT, bool) {
 	return e, true
 }
 
+// DecodeFor calls Decode, then applies a positive, differing status to a kind copy.
+// All other decoded data remains unchanged.
+func (dto *DTO) DecodeFor(statusCode int) (*ErrorT, bool) {
+	e, ok := dto.Decode()
+	if !ok {
+		return nil, false
+	}
+
+	if statusCode > 0 && e.kind.StatusCode() != statusCode {
+		e.kind = e.kind.CustomizeStatusCode(statusCode)
+	}
+
+	return e, true
+}
+
 // JSON marshals the DTO and panics if the payload cannot be encoded.
 func (dto *DTO) JSON() json.RawMessage {
 	b, err := json.Marshal(dto)

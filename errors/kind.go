@@ -27,11 +27,9 @@ type Kind struct {
 	customStatus bool
 }
 
-// Register adds a new Kind instance to the global registry of error kinds.
-// It checks if a Kind with the same code has already been registered, and if so,
-// it panics to prevent duplicate registrations. This function ensures that each
-// Kind is uniquely identified by its code within the application, allowing for
-// consistent error categorization and handling.
+// Register adds kinds to the global registry. It panics on a duplicate code or
+// name, because the registry is what decodes a kind received over the wire and
+// two kinds answering to one identifier would make that ambiguous.
 func Register(kinds ...*Kind) {
 	for _, kind := range kinds {
 		if _, ok := registeredCodes[kind.Code]; ok {
@@ -47,11 +45,9 @@ func Register(kinds ...*Kind) {
 	}
 }
 
-// GetByCode retrieves a Kind instance from the global registry using the provided code.
-// If the code does not correspond to any registered Kind, the function panics,
-// indicating that the requested error kind does not exist. This function is
-// essential for accessing predefined error kinds based on their unique codes,
-// facilitating error handling and categorization within the application.
+// GetByCode returns the registered Kind with the given code and panics when the
+// code is unknown. Use LookupByCode for a code that came from outside the
+// program.
 func GetByCode(code string) *Kind {
 	kind, ok := LookupByCode(code)
 	if !ok {
@@ -70,11 +66,8 @@ func LookupByCode(code string) (*Kind, bool) {
 	return kind, ok
 }
 
-// Get retrieves a Kind instance from the global registry using the provided name.
-// If the name does not correspond to any registered Kind, the function panics,
-// indicating that the requested error kind does not exist. This function is
-// crucial for accessing predefined error kinds based on their unique names,
-// facilitating error handling and categorization within the application.
+// Get returns the registered Kind with the given name and panics when the name
+// is unknown.
 func Get(name string) *Kind {
 	kind, ok := registeredNames[name]
 	if !ok {
@@ -84,11 +77,8 @@ func Get(name string) *Kind {
 	return kind
 }
 
-// FQN returns a string representation of the Kind's hierarchy.
-// It constructs the hierarchy by concatenating the Kind's name with its
-// parent's hierarchy, separated by the KIND_FQN_SEPARATOR. If the Kind has
-// no parent, it simply returns its name. This method is useful for
-// understanding the hierarchical structure of error kinds.
+// FQN spells the kind's ancestry, from its own name up to the root, joined by
+// KIND_FQN_SEPARATOR.
 func (k *Kind) FQN() string {
 	if k.Parent == nil {
 		return k.Name
@@ -97,11 +87,9 @@ func (k *Kind) FQN() string {
 	return fmt.Sprintf("%s%s%s", k.Name, KIND_FQN_SEPARATOR, k.Parent.FQN())
 }
 
-// StatusCode returns the HTTP status code associated with the Kind instance.
-// It traverses up the hierarchy of the Kind, checking each ancestor for an
-// assigned HTTP status code. If a Kind in the hierarchy has an HTTP status
-// code, it returns that code. If no HTTP status code is found in the hierarchy,
-// it defaults to returning http.StatusInternalServerError.
+// StatusCode returns the first HTTP status found walking up the hierarchy, so a
+// kind can leave the status to its parent. It falls back to 500 when no ancestor
+// defines one.
 func (k *Kind) StatusCode() int {
 	for current := k; current != nil; current = current.Parent {
 		if current.HTTPStatusCode != HTTP_STATUS_NOT_DEFINED {
@@ -134,11 +122,9 @@ func (k *Kind) CustomizeStatusCode(code int) *Kind {
 	return &custom
 }
 
-// Is checks if the current Kind instance matches the specified other Kind instance
-// by comparing their codes. It traverses up the hierarchy of the current Kind,
-// checking each ancestor's code against the code of the other Kind. If a match
-// is found, it returns true, indicating that the two Kinds are equivalent or
-// related in the hierarchy. Otherwise, it returns false.
+// Is reports whether the kind or any of its ancestors carries the code of other,
+// so matching a parent kind also matches everything below it. Codes are compared
+// rather than pointers, because a customized kind is a copy.
 func (k *Kind) Is(other *Kind) bool {
 	for current := k; current != nil; current = current.Parent {
 		if current.Code == other.Code {

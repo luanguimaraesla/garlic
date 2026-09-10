@@ -93,7 +93,10 @@
 // Error constructors accept optional [Opt] values that enrich the error:
 //
 //   - [Hint] adds a user-facing suggestion included in the [DTO].
+//   - [Details] merges public key-value pairs that travel inside the [DTO].
 //   - [Context] captures debugging key-value pairs with automatic caller detection.
+//     Build a context in the function the error belongs to: the caller it detects
+//     is the scope the fields are logged under.
 //   - [RevTrace] appends a reverse trace entry (auto-added by [New] and [Propagate]).
 //   - [StackTrace] captures the full goroutine stack.
 //   - [Template] creates a reusable error template (see [TemplateT]).
@@ -102,9 +105,14 @@
 //
 //	err := errors.New(errors.KindSystemError, "cache miss",
 //	    errors.Hint("retry the request in a few seconds"),
+//	    errors.Details(map[string]any{"backend": "redis"}),
 //	    errors.Context(errors.Field("key", cacheKey)),
 //	    errors.StackTrace(),
 //	)
+//
+// [Details] and [Context] differ in who sees them: details are public and cross
+// the wire inside the DTO, while context fields only reach the logs. Keep
+// anything a client should not read out of [Details].
 //
 // # Exact HTTP Statuses
 //
@@ -128,6 +136,11 @@
 // [PropagateAs], [From], and a [TemplateT]; a kind the wrapping call customized
 // itself wins over the one carried from the cause. Redaction on the wire keeps
 // following the kind's user or system classification, not the status class.
+//
+// A [DTO] received over the wire is decoded with [DTO.DecodeFor], which reports
+// the status the response arrived with while leaving the kind's classification
+// and identity alone. A kind that already reports that status is reused as it
+// is, since a status that matches by itself states no intent to pin one.
 //
 // [Kind] carries unexported state to mark a status pinned on purpose, so a kind
 // declared outside this package has to use keyed fields: a positional literal,
