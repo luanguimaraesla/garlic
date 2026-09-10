@@ -115,7 +115,8 @@
 // semantic kind matching both keep working. A registered DTO is no exception:
 // its kind still decides classification, matching, and what the DTO says, while
 // the status it reports is the one its response travelled under, the same value
-// left on Response.StatusCode.
+// left on Response.StatusCode. That restoration is errors.DTO.DecodeFor, so a
+// kind that already reports the transport status is decoded untouched.
 //
 // # Diagnostics kept from an error response
 //
