@@ -207,12 +207,15 @@ func TestResponse_DecodeErrorReportsUnknownKind(t *testing.T) {
 		status int
 		class  *errors.Kind
 	}{
+		{http.StatusNotFound, errors.KindForStatus(http.StatusNotFound)},
 		{http.StatusBadGateway, errors.KindForStatus(http.StatusBadGateway)},
+		{http.StatusInternalServerError, errors.KindForStatus(http.StatusInternalServerError)},
 		{499, errors.KindUserError},
+		{599, errors.KindSystemError},
 	}
 
 	for _, tc := range cases {
-		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+		t.Run(fmt.Sprint(tc.status), func(t *testing.T) {
 			body := `{"error":"backend exploded","kind":"Z99999","name":"FutureError"}`
 			gerr := errorResponse(tc.status, io.NopCloser(strings.NewReader(body)), "application/json").DecodeError()
 
@@ -243,6 +246,119 @@ func TestResponse_DecodeErrorReportsUnknownKind(t *testing.T) {
 				t.Errorf("http_status = %v", context["http_status"])
 			}
 		})
+	}
+}
+
+// The mismatch kind reports the received status, but a status it already reports
+// is not pinned on it: nothing was customized, so a later caller can still
+// retype the error.
+func TestResponse_DecodeErrorPinsTheUnknownKindOnlyWhenNeeded(t *testing.T) {
+	const body = `{"error":"boom","kind":"Z99999"}`
+
+	for _, status := range []int{http.StatusInternalServerError, http.StatusBadGateway} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			gerr := errorResponse(status, io.NopCloser(strings.NewReader(body)), "application/json").DecodeError()
+
+			kind := asErrorT(t, gerr).Kind()
+			if kind.StatusCode() != status {
+				t.Errorf("Kind().StatusCode() = %d, want %d", kind.StatusCode(), status)
+			}
+
+			copied := kind != KindUnknownResponseError
+			if want := status != KindUnknownResponseError.StatusCode(); copied != want {
+				t.Errorf("kind copied = %v, want %v for status %d", copied, want, status)
+			}
+		})
+	}
+
+	if got := KindUnknownResponseError.StatusCode(); got != http.StatusInternalServerError {
+		t.Errorf("the registered kind now reports %d, want 500", got)
+	}
+}
+
+// The troubleshooting context is keyed by the function that owns the error, so a
+// log line points at DecodeError instead of at a helper it happened to call.
+func TestResponse_DecodeErrorAttributesItsContextToItself(t *testing.T) {
+	const scope = "github.com/luanguimaraesla/garlic/httpclient.(*Response).DecodeError"
+
+	reader := func(body string) func() io.ReadCloser {
+		return func() io.ReadCloser { return io.NopCloser(strings.NewReader(body)) }
+	}
+
+	cases := map[string]struct {
+		body    func() io.ReadCloser
+		want    []string
+		omitted []string
+	}{
+		"non-garlic body": {
+			body: reader("<html></html>"),
+			want: []string{"body", "body_bytes", "body_truncated"},
+		},
+		"unknown kind": {
+			body: reader(`{"error":"boom","kind":"Z99999"}`),
+			want: []string{"http_status", "received_kind", "received_kind_bytes", "received_kind_truncated"},
+		},
+		"empty body": {
+			body:    reader(""),
+			want:    []string{"body_bytes", "body_truncated"},
+			omitted: []string{"body"},
+		},
+		"nil body": {
+			body:    func() io.ReadCloser { return nil },
+			want:    []string{"body_bytes", "body_truncated"},
+			omitted: []string{"body"},
+		},
+		"failed read prefix": {
+			body: func() io.ReadCloser { return &failingBody{prefix: []byte("upstream said: quota exceeded")} },
+			want: []string{"body", "body_bytes", "body_truncated"},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			gerr := errorResponse(http.StatusBadGateway, tc.body(), "text/html").DecodeError()
+
+			scopes := asErrorT(t, gerr).Troubleshooting.Context
+			if len(scopes) != 1 {
+				t.Fatalf("troubleshooting scopes = %v, want DecodeError's alone", scopes)
+			}
+
+			fields, ok := scopes[scope].(map[string]any)
+			if !ok {
+				t.Fatalf("no context under %q, got %v", scope, scopes)
+			}
+			for _, key := range tc.want {
+				if _, ok := fields[key]; !ok {
+					t.Errorf("%s should sit under DecodeError's scope, got %v", key, fields)
+				}
+			}
+			for _, key := range tc.omitted {
+				if got, ok := fields[key]; ok {
+					t.Errorf("%s = %v, want no snippet for a body that carried none", key, got)
+				}
+			}
+		})
+	}
+}
+
+// A registered DTO is the peer's error, so none of the client's own diagnostics
+// may be grafted onto it.
+func TestResponse_DecodeErrorKeepsClientDiagnosticsOffARegisteredDTO(t *testing.T) {
+	body := fmt.Sprintf(`{"error":"missing","kind":%q}`, errors.KindNotFoundError.Code)
+
+	gerr := errorResponse(http.StatusBadGateway, io.NopCloser(strings.NewReader(body)), "application/json").DecodeError()
+
+	e := asErrorT(t, gerr)
+	for _, key := range []string{"http_status", "content_type", "body_bytes", "truncated"} {
+		if _, ok := e.Details[key]; ok {
+			t.Errorf("details carry the client diagnostic %q: %v", key, e.Details)
+		}
+	}
+	if len(e.Troubleshooting.Context) != 0 {
+		t.Errorf("troubleshooting context = %v, want none added", e.Troubleshooting.Context)
+	}
+	if len(e.Troubleshooting.ReverseTrace) != 0 {
+		t.Errorf("reverse trace = %v, want no frame added", e.Troubleshooting.ReverseTrace)
 	}
 }
 
