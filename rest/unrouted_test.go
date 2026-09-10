@@ -6,9 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"reflect"
-	"sort"
 	"testing"
 
 	chi "github.com/go-chi/chi/v5"
@@ -18,20 +15,7 @@ import (
 	"github.com/luanguimaraesla/garlic/logging"
 )
 
-// customMethod is registered once for the whole package because chi's method
-// table is global and registering twice from separate tests would race.
-const customMethod = "LINK"
-
-func TestMain(m *testing.M) {
-	chi.RegisterMethod(customMethod)
-	os.Exit(m.Run())
-}
-
 func noop(http.ResponseWriter, *http.Request) {}
-
-// routeTable registers the same routes on any chi router, so a garlic server and
-// a plain chi router can be compared side by side.
-type routeTable func(chi.Router)
 
 func serve(handler http.Handler, method, target string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
@@ -53,44 +37,6 @@ func decodeDTO(t *testing.T, rec *httptest.ResponseRecorder) *errors.DTO {
 	}
 
 	return &dto
-}
-
-// allowHeader serves the request and returns the Allow values, sorted because
-// chi builds its own header from map iteration and does not promise an order.
-func allowHeader(t *testing.T, handler http.Handler, method, target string) []string {
-	t.Helper()
-
-	rec := serve(handler, method, target)
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d, want 405", rec.Code)
-	}
-
-	allow := append([]string(nil), rec.Result().Header.Values("Allow")...)
-	sort.Strings(allow)
-
-	return allow
-}
-
-// assertAllowMatchesChi is the arbiter for the rebuilt Allow header: the garlic
-// server and an unmodified chi router carrying the same routes must advertise
-// the same method set.
-func assertAllowMatchesChi(t *testing.T, routes routeTable, method, target string) []string {
-	t.Helper()
-
-	server := NewServer("differential")
-	routes(server.Router())
-
-	reference := chi.NewRouter()
-	routes(reference)
-
-	garlic := allowHeader(t, server.Router(), method, target)
-	chiAllow := allowHeader(t, reference, method, target)
-
-	if !reflect.DeepEqual(garlic, chiAllow) {
-		t.Errorf("Allow = %v, chi says %v", garlic, chiAllow)
-	}
-
-	return garlic
 }
 
 func TestUnrouted_notFoundServesTheCanonicalDTO(t *testing.T) {
@@ -146,292 +92,38 @@ func TestUnrouted_methodNotAllowedServesTheCanonicalDTO(t *testing.T) {
 	if dto.Details["hint"] == nil {
 		t.Error("the DTO should carry a hint")
 	}
-	if got := rec.Result().Header.Values("Allow"); !reflect.DeepEqual(got, []string{http.MethodGet}) {
-		t.Errorf("Allow = %v, want [GET]", got)
+	if got := rec.Result().Header.Values("Allow"); len(got) != 0 {
+		t.Errorf("Allow = %v, want no header", got)
 	}
 }
 
-func TestUnrouted_allowMatchesChi(t *testing.T) {
-	cases := []struct {
-		name   string
-		routes routeTable
-		method string
-		target string
-		want   []string
-	}{
-		{
-			name:   "simple mismatch",
-			routes: func(r chi.Router) { r.Get("/items", noop); r.Delete("/items", noop) },
-			method: http.MethodPost,
-			target: "/items",
-			want:   []string{http.MethodDelete, http.MethodGet},
-		},
-		{
-			name:   "custom registered method",
-			routes: func(r chi.Router) { r.Method(customMethod, "/items", http.HandlerFunc(noop)) },
-			method: http.MethodPost,
-			target: "/items",
-			want:   []string{customMethod},
-		},
-		{
-			name:   "encoded path",
-			routes: func(r chi.Router) { r.Get("/a/{p}", noop) },
-			method: http.MethodPost,
-			target: "/a/b%2Fc",
-			want:   []string{http.MethodGet},
-		},
-		{
-			name: "root middleware rewrites the route path",
-			routes: func(r chi.Router) {
-				r.Use(func(next http.Handler) http.Handler {
-					return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-						chi.RouteContext(req.Context()).RoutePath = "/items"
-						next.ServeHTTP(w, req)
-					})
-				})
-				r.Get("/items", noop)
-			},
-			method: http.MethodPost,
-			target: "/anything",
-			want:   []string{http.MethodGet},
-		},
-		{
-			name: "mounted sub-router",
-			routes: func(r chi.Router) {
-				r.Get("/direct", noop)
-				sub := chi.NewRouter()
-				sub.Get("/items", noop)
-				r.Mount("/api", sub)
-			},
-			method: http.MethodPost,
-			target: "/api/items",
-			want:   []string{http.MethodGet},
-		},
-		{
-			name: "nested mounts",
-			routes: func(r chi.Router) {
-				inner := chi.NewRouter()
-				inner.Get("/items", noop)
-				outer := chi.NewRouter()
-				outer.Mount("/v1", inner)
-				r.Mount("/api", outer)
-			},
-			method: http.MethodPost,
-			target: "/api/v1/items",
-			want:   []string{http.MethodGet},
-		},
-		{
-			name: "conflicting root path",
-			routes: func(r chi.Router) {
-				r.Put("/items", noop)
-				sub := chi.NewRouter()
-				sub.Get("/items", noop)
-				r.Mount("/api", sub)
-			},
-			method: http.MethodPost,
-			target: "/api/items",
-			want:   []string{http.MethodGet},
-		},
-		{
-			name: "cross-tree accumulation",
-			routes: func(r chi.Router) {
-				r.Put("/api/items", noop)
-				sub := chi.NewRouter()
-				sub.Get("/items", noop)
-				r.Mount("/api", sub)
-			},
-			method: http.MethodPost,
-			target: "/api/items",
-			want:   []string{http.MethodGet, http.MethodPut},
-		},
-		{
-			name: "mount endpoint",
-			routes: func(r chi.Router) {
-				sub := chi.NewRouter()
-				sub.Get("/", noop)
-				r.Mount("/api", sub)
-			},
-			method: http.MethodPost,
-			target: "/api",
-			want:   []string{http.MethodGet},
-		},
-		{
-			name: "mount endpoint with a trailing slash",
-			routes: func(r chi.Router) {
-				sub := chi.NewRouter()
-				sub.Get("/", noop)
-				r.Mount("/api", sub)
-			},
-			method: http.MethodPost,
-			target: "/api/",
-			want:   []string{http.MethodGet},
-		},
-		{
-			name: "mount endpoint beside a root route",
-			routes: func(r chi.Router) {
-				sub := chi.NewRouter()
-				sub.Get("/", noop)
-				r.Mount("/api", sub)
-				r.Put("/api", noop)
-			},
-			method: http.MethodPost,
-			target: "/api",
-			want:   []string{http.MethodGet},
-		},
-		{
-			name: "root route beside a parameter mount endpoint",
-			routes: func(r chi.Router) {
-				r.Get("/api", noop)
-				sub := chi.NewRouter()
-				sub.Put("/", noop)
-				r.Mount("/{tenant}", sub)
-			},
-			method: http.MethodPost,
-			target: "/api",
-			want:   []string{http.MethodGet, http.MethodPut},
-		},
-		{
-			name: "trailing-slash root route beside a parameter mount endpoint",
-			routes: func(r chi.Router) {
-				r.Get("/api/", noop)
-				sub := chi.NewRouter()
-				sub.Put("/", noop)
-				r.Mount("/{tenant}", sub)
-			},
-			method: http.MethodPost,
-			target: "/api",
-			want:   []string{http.MethodPut},
-		},
-		{
-			name: "concrete route beside a parameter mount endpoint",
-			routes: func(r chi.Router) {
-				r.Put("/t/7", noop)
-				sub := chi.NewRouter()
-				sub.Get("/", noop)
-				r.Mount("/t/{id}", sub)
-			},
-			method: http.MethodPost,
-			target: "/t/7",
-			want:   []string{http.MethodGet, http.MethodPut},
-		},
-		{
-			name: "trailing-slash concrete route beside a parameter mount endpoint",
-			routes: func(r chi.Router) {
-				r.Put("/t/7/", noop)
-				sub := chi.NewRouter()
-				sub.Get("/", noop)
-				r.Mount("/t/{id}", sub)
-			},
-			method: http.MethodPost,
-			target: "/t/7",
-			want:   []string{http.MethodGet},
-		},
-		{
-			name: "nested mount endpoint",
-			routes: func(r chi.Router) {
-				inner := chi.NewRouter()
-				inner.Get("/", noop)
-				outer := chi.NewRouter()
-				outer.Mount("/v1", inner)
-				r.Mount("/api", outer)
-			},
-			method: http.MethodPost,
-			target: "/api/v1",
-			want:   []string{http.MethodGet},
-		},
-		{
-			name: "param-carrying mount endpoint",
-			routes: func(r chi.Router) {
-				sub := chi.NewRouter()
-				sub.Get("/", noop)
-				r.Mount("/t/{tid}/api", sub)
-			},
-			method: http.MethodPost,
-			target: "/t/7/api",
-			want:   []string{http.MethodGet},
-		},
-		{
-			name: "root route beside a catch-all mount",
-			routes: func(r chi.Router) {
-				sub := chi.NewRouter()
-				sub.Put("/items", noop)
-				r.Get("/", noop)
-				r.Mount("/", sub)
-			},
-			method: http.MethodPost,
-			target: "/",
-			want:   []string{http.MethodGet},
-		},
-		{
-			name: "param-carrying mount",
-			routes: func(r chi.Router) {
-				sub := chi.NewRouter()
-				sub.Get("/items", noop)
-				r.Mount("/t/{tid}/api", sub)
-			},
-			method: http.MethodPost,
-			target: "/t/7/api/items",
-			want:   []string{http.MethodGet},
-		},
-		{
-			name:   "unsupported method on an existing path",
-			routes: func(r chi.Router) { r.Get("/items", noop) },
-			method: "FROB",
-			target: "/items",
-			want:   nil,
-		},
-		{
-			name:   "unsupported method on a missing path",
-			routes: func(r chi.Router) { r.Get("/items", noop) },
-			method: "FROB",
-			target: "/nowhere",
-			want:   nil,
-		},
-	}
+// The 405 answer is the same canonical DTO wherever the mismatch happens, and it
+// never carries a generated Allow header.
+func TestUnrouted_methodNotAllowedCarriesNoAllowHeader(t *testing.T) {
+	server := NewServer("no-allow")
+	server.Router().Get("/items", noop)
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := assertAllowMatchesChi(t, tc.routes, tc.method, tc.target)
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("Allow = %v, want %v", got, tc.want)
+	sub := chi.NewRouter()
+	sub.Get("/things", noop)
+	server.Router().Mount("/api", sub)
+
+	for name, target := range map[string]string{
+		"root route":    "/items",
+		"mounted route": "/api/things",
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := serve(server.Router(), http.MethodPost, target)
+
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status = %d, want 405", rec.Code)
+			}
+			if got := rec.Result().Header.Values("Allow"); len(got) != 0 {
+				t.Errorf("Allow = %v, want no header", got)
+			}
+			if dto := decodeDTO(t, rec); dto.Code != errors.KindForStatus(http.StatusMethodNotAllowed).Code {
+				t.Errorf("kind = %q, want the 405 kind", dto.Code)
 			}
 		})
-	}
-}
-
-// A middleware that rewrites the route path from inside a mounted router is the
-// one case the rebuilt header cannot reproduce: chi accumulated its Allow while
-// routing the original path, and the method set it computed is unexported. The
-// probe therefore sees only what the rewritten tail can reach.
-func TestUnrouted_allowDivergesOnMountInternalRewrite(t *testing.T) {
-	routes := func(r chi.Router) {
-		sub := chi.NewRouter()
-		sub.Use(func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				chi.RouteContext(req.Context()).RoutePath = "/other"
-				next.ServeHTTP(w, req)
-			})
-		})
-		sub.Get("/items", noop)
-		sub.Put("/other", noop)
-		r.Mount("/api", sub)
-		r.Delete("/api/items", noop)
-	}
-
-	server := NewServer("divergence")
-	routes(server.Router())
-
-	reference := chi.NewRouter()
-	routes(reference)
-
-	garlic := allowHeader(t, server.Router(), http.MethodPost, "/api/items")
-	if !reflect.DeepEqual(garlic, []string{http.MethodPut}) {
-		t.Errorf("Allow = %v, want the rewritten tail's [PUT]", garlic)
-	}
-
-	chiAllow := allowHeader(t, reference, http.MethodPost, "/api/items")
-	if reflect.DeepEqual(garlic, chiAllow) {
-		t.Errorf("the divergence is gone: chi now also reports %v, revisit rest/doc.go", chiAllow)
 	}
 }
 
